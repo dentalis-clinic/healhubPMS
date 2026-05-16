@@ -11,9 +11,12 @@ export async function GET(
   try {
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const { id } = await params;
-    const template = await prisma.printable_templates.findUnique({ where: { id } });
+    const template = await prisma.printable_templates.findUnique({
+      where: { id, clinicId: clinic.id },
+    });
 
     if (!template) {
       return NextResponse.json({ success: false, error: "Template not found" }, { status: 404 });
@@ -50,10 +53,13 @@ export async function PATCH(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const { id } = await params;
 
-    const existing = await prisma.printable_templates.findUnique({ where: { id } });
+    const existing = await prisma.printable_templates.findUnique({
+      where: { id, clinicId: clinic.id },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: "Template not found" }, { status: 404 });
     }
@@ -97,10 +103,13 @@ export async function DELETE(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const { id } = await params;
 
-    const existing = await prisma.printable_templates.findUnique({ where: { id } });
+    const existing = await prisma.printable_templates.findUnique({
+      where: { id, clinicId: clinic.id },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: "Template not found" }, { status: 404 });
     }

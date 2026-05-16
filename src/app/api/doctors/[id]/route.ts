@@ -11,7 +11,6 @@ const patchDoctorSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-// --- PATCH: Update doctor ---
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -22,6 +21,7 @@ export async function PATCH(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const { id } = await params;
 
@@ -45,7 +45,7 @@ export async function PATCH(
       );
     }
 
-    const target = await prisma.doctor.findUnique({ where: { id } });
+    const target = await prisma.doctor.findUnique({ where: { id, clinicId: clinic.id } });
     if (!target) {
       return NextResponse.json(
         { success: false, error: "Doctor not found." },
@@ -57,12 +57,8 @@ export async function PATCH(
       where: { id },
       data: {
         ...(name && { name }),
-        ...(qualifications !== undefined && {
-          qualifications: qualifications || null,
-        }),
-        ...(registrationNumber !== undefined && {
-          registrationNumber: registrationNumber || null,
-        }),
+        ...(qualifications !== undefined && { qualifications: qualifications || null }),
+        ...(registrationNumber !== undefined && { registrationNumber: registrationNumber || null }),
         ...(isActive !== undefined && { isActive }),
       },
     });
@@ -88,7 +84,6 @@ export async function PATCH(
   }
 }
 
-// --- DELETE: Soft-delete doctor (or hard-delete if no appointments) ---
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -99,10 +94,11 @@ export async function DELETE(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const { id } = await params;
 
-    const target = await prisma.doctor.findUnique({ where: { id } });
+    const target = await prisma.doctor.findUnique({ where: { id, clinicId: clinic.id } });
     if (!target) {
       return NextResponse.json(
         { success: false, error: "Doctor not found." },
@@ -110,19 +106,13 @@ export async function DELETE(
       );
     }
 
-    // Check if doctor has any appointments
     const appointmentCount = await prisma.appointment.count({
-      where: { doctorId: id },
+      where: { clinicId: clinic.id, doctorId: id },
     });
 
     if (appointmentCount > 0) {
-      // Soft-delete: keep record for historical appointments
-      await prisma.doctor.update({
-        where: { id },
-        data: { isActive: false },
-      });
+      await prisma.doctor.update({ where: { id }, data: { isActive: false } });
     } else {
-      // No references: safe to hard-delete
       await prisma.doctor.delete({ where: { id } });
     }
 

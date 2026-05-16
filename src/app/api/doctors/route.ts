@@ -10,17 +10,19 @@ const createDoctorSchema = z.object({
   registrationNumber: z.string().trim().max(100).optional(),
 });
 
-// --- GET: List doctors ---
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const includeInactive =
       request.nextUrl.searchParams.get("includeInactive") === "true";
 
     const doctors = await prisma.doctor.findMany({
-      where: includeInactive ? {} : { isActive: true },
+      where: includeInactive
+        ? { clinicId: clinic.id }
+        : { clinicId: clinic.id, isActive: true },
       orderBy: { createdAt: "asc" },
     });
 
@@ -44,7 +46,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// --- POST: Create doctor ---
 export async function POST(request: NextRequest) {
   try {
     const csrfError = validateOrigin(request);
@@ -52,6 +53,7 @@ export async function POST(request: NextRequest) {
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const body = await request.json();
     const parsed = createDoctorSchema.safeParse(body);
@@ -68,6 +70,7 @@ export async function POST(request: NextRequest) {
 
     const doctor = await prisma.doctor.create({
       data: {
+        clinicId: clinic.id,
         name,
         qualifications: qualifications || null,
         registrationNumber: registrationNumber || null,

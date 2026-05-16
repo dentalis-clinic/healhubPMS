@@ -1,8 +1,7 @@
 import { PrismaClient, Prisma, type Sex } from "@/generated/prisma/client";
-import { getCurrentISTDate } from "./date";
+import { getClinicDate } from "./date";
 import { normalizePhoneNumber } from "./phone";
 
-const CLINIC_PREFIX = "DDCJ";
 const MAX_RETRIES = 3;
 
 /** Transaction client type — PrismaClient minus interactive-tx-disallowed methods. */
@@ -12,18 +11,21 @@ export type TxClient = Omit<
 >;
 
 /**
- * Generate a patient ID in the format DDCJ-YYYYMMDD-XXXX.
+ * Generate a patient ID in the format {SHORTNAME}-YYYYMMDD-XXXX.
  * Must be called inside a serializable Prisma transaction.
  */
 export async function generatePatientId(
   tx: TxClient,
+  clinicId: string,
+  clinicShortName: string,
+  timezone: string,
   retryOffset = 0
 ): Promise<string> {
-  const todayIST = getCurrentISTDate();
-  const prefix = `${CLINIC_PREFIX}-${todayIST}`;
+  const todayDate = getClinicDate(timezone);
+  const prefix = `${clinicShortName}-${todayDate}`;
 
   const todayCount = await tx.patient.count({
-    where: { patientId: { startsWith: prefix } },
+    where: { clinicId, patientId: { startsWith: prefix } },
   });
 
   const serial = (todayCount + 1 + retryOffset).toString().padStart(4, "0");
@@ -36,13 +38,15 @@ export async function generatePatientId(
  */
 export async function generateAppointmentId(
   tx: TxClient,
+  clinicId: string,
+  timezone: string,
   retryOffset = 0
 ): Promise<string> {
-  const todayIST = getCurrentISTDate();
-  const prefix = `APT-${todayIST}`;
+  const todayDate = getClinicDate(timezone);
+  const prefix = `APT-${todayDate}`;
 
   const todayCount = await tx.appointment.count({
-    where: { appointmentId: { startsWith: prefix } },
+    where: { clinicId, appointmentId: { startsWith: prefix } },
   });
 
   const serial = (todayCount + 1 + retryOffset).toString().padStart(4, "0");
@@ -50,10 +54,8 @@ export async function generateAppointmentId(
 }
 
 /**
- * Find an existing patient by normalized phone + case-insensitive name,
- * or create a new one with a generated DDCJ ID.
- *
- * Optionally updates email/age on the existing patient if newly provided.
+ * Find an existing patient by normalized phone + case-insensitive name within a clinic,
+ * or create a new one with a generated clinic-scoped ID.
  */
 export async function findOrCreatePatient(
   prisma: PrismaClient,
@@ -64,20 +66,21 @@ export async function findOrCreatePatient(
     age?: number | null;
     sex?: Sex | null;
     address?: string | null;
-  }
+  },
+  clinic: { id: string; shortName: string; timezone: string }
 ): Promise<{ patientId: string; patient: { id: string; patientId: string }; isNew: boolean }> {
   const normalizedPhone = normalizePhoneNumber(data.phone);
 
-  // Try to find existing patient by phone + name (case-insensitive)
+  // Try to find existing patient by phone + name (case-insensitive) within this clinic
   const existing = await prisma.patient.findFirst({
     where: {
+      clinicId: clinic.id,
       phone: normalizedPhone,
       name: { equals: data.name, mode: "insensitive" },
     },
   });
 
   if (existing) {
-    // Optionally update demographics if newly provided
     const updates: Record<string, unknown> = {};
     if (data.email && !existing.email) updates.email = data.email;
     if (data.age != null && existing.age == null) updates.age = data.age;
@@ -85,10 +88,7 @@ export async function findOrCreatePatient(
     if (data.address && !existing.address) updates.address = data.address;
 
     if (Object.keys(updates).length > 0) {
-      await prisma.patient.update({
-        where: { id: existing.id },
-        data: updates,
-      });
+      await prisma.patient.update({ where: { id: existing.id }, data: updates });
     }
 
     return {
@@ -98,14 +98,15 @@ export async function findOrCreatePatient(
     };
   }
 
-  // Create new patient with generated ID
+  // Create new patient with generated clinic-scoped ID
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       const result = await prisma.$transaction(
         async (tx) => {
-          const patientId = await generatePatientId(tx, attempt);
+          const patientId = await generatePatientId(tx, clinic.id, clinic.shortName, clinic.timezone, attempt);
           const record = await tx.patient.create({
             data: {
+              clinicId: clinic.id,
               patientId,
               name: data.name,
               phone: normalizedPhone,

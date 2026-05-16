@@ -29,10 +29,10 @@ export async function PATCH(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
-    // Find appointment
     const existing = await prisma.appointment.findUnique({
-      where: { id },
+      where: { id, clinicId: clinic.id },
       include: { patient: true },
     });
     if (!existing) {
@@ -42,7 +42,6 @@ export async function PATCH(
       );
     }
 
-    // Validate body
     const body = await request.json();
     const parsed = patchAppointmentSchema.safeParse(body);
 
@@ -56,7 +55,6 @@ export async function PATCH(
 
     const data = parsed.data;
 
-    // Enforce valid status transitions
     if (data.status) {
       const allowed = VALID_TRANSITIONS[existing.status];
       if (!allowed.includes(data.status as AppointmentStatus)) {
@@ -70,7 +68,6 @@ export async function PATCH(
       }
     }
 
-    // Build update data
     const updateData: Record<string, unknown> = {};
     if (data.status !== undefined) updateData.status = data.status;
     if (data.bookingChannel !== undefined) updateData.bookingChannel = data.bookingChannel;
@@ -84,7 +81,6 @@ export async function PATCH(
     if (data.preferredDateTime !== undefined)
       updateData.preferredDateTime = data.preferredDateTime;
 
-    // Use atomic update with slot conflict check when rescheduling
     const newDateTime = data.preferredDateTime instanceof Date
       ? data.preferredDateTime
       : data.preferredDateTime
@@ -92,12 +88,12 @@ export async function PATCH(
         : undefined;
 
     const updated = await updateAppointmentAtomic(prisma, {
+      clinicId: clinic.id,
       id,
       data: updateData,
       newPreferredDateTime: newDateTime,
     });
 
-    // Serialize dates
     const appointment = {
       ...updated,
       createdAt: updated.createdAt.toISOString(),
@@ -114,8 +110,7 @@ export async function PATCH(
             ...updated.prescription,
             createdAt: updated.prescription.createdAt.toISOString(),
             updatedAt: updated.prescription.updatedAt.toISOString(),
-            nextVisitDate:
-              updated.prescription.nextVisitDate?.toISOString() ?? null,
+            nextVisitDate: updated.prescription.nextVisitDate?.toISOString() ?? null,
           }
         : null,
     };

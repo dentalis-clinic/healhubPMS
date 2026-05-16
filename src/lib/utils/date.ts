@@ -2,9 +2,14 @@ import { DateTime } from "luxon";
 
 const IST_ZONE = "Asia/Kolkata";
 
-/** Current IST date as YYYYMMDD string (for patient ID generation). */
+/** Current date in a given timezone as YYYYMMDD string (for ID generation). */
+export function getClinicDate(timezone: string): string {
+  return DateTime.now().setZone(timezone).toFormat("yyyyMMdd");
+}
+
+/** @deprecated Use getClinicDate(clinic.timezone) in Phase 2+ */
 export function getCurrentISTDate(): string {
-  return DateTime.now().setZone(IST_ZONE).toFormat("yyyyMMdd");
+  return getClinicDate(IST_ZONE);
 }
 
 /** Convert a JS Date (UTC) to a Luxon DateTime in IST. */

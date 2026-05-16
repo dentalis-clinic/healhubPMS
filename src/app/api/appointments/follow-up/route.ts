@@ -13,9 +13,8 @@ export async function POST(request: NextRequest) {
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
-    const { user } = auth;
+    const { user, clinic } = auth;
 
-    // Validate body
     const body = await request.json();
     const parsed = followUpSchema.safeParse(body);
 
@@ -29,9 +28,8 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data;
 
-    // Verify patient exists
     const patient = await prisma.patient.findUnique({
-      where: { id: data.patientId },
+      where: { id: data.patientId, clinicId: clinic.id },
     });
 
     if (!patient) {
@@ -41,8 +39,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create follow-up appointment with atomic slot conflict check
     const appointment = await createAppointmentAtomic(prisma, {
+      clinicId: clinic.id,
+      timezone: clinic.timezone,
       data: {
         patientId: patient.id,
         type: "FOLLOW_UP",

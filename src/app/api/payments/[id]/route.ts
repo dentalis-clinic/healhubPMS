@@ -20,6 +20,7 @@ export async function PATCH(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const { id } = await params;
 
@@ -33,7 +34,7 @@ export async function PATCH(
       );
     }
 
-    const payment = await prisma.payment.findUnique({ where: { id } });
+    const payment = await prisma.payment.findUnique({ where: { id, clinicId: clinic.id } });
     if (!payment) {
       return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
     }
@@ -76,10 +77,11 @@ export async function DELETE(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const { id } = await params;
 
-    const payment = await prisma.payment.findUnique({ where: { id } });
+    const payment = await prisma.payment.findUnique({ where: { id, clinicId: clinic.id } });
     if (!payment) {
       return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
     }

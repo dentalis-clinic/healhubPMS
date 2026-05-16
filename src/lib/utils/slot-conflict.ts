@@ -18,19 +18,22 @@ export class SlotConflictError extends Error {
 }
 
 /**
- * Check for slot conflicts inside a transaction.
+ * Check for slot conflicts within a clinic inside a transaction.
  * Throws SlotConflictError if the slot is taken.
  */
 export async function checkSlotConflict(
   tx: TxClient,
+  clinicId: string,
   preferredDateTime: Date,
   excludeId?: string
 ): Promise<void> {
   const where: {
+    clinicId: string;
     preferredDateTime: Date;
     status: { in: AppointmentStatus[] };
     id?: { not: string };
   } = {
+    clinicId,
     preferredDateTime,
     status: { in: BLOCKING_STATUSES },
   };
@@ -53,19 +56,21 @@ export async function checkSlotConflict(
 export async function createAppointmentAtomic(
   prisma: PrismaClient,
   opts: {
-    data: Omit<Prisma.AppointmentUncheckedCreateInput, "appointmentId">;
+    clinicId: string;
+    timezone: string;
+    data: Omit<Prisma.AppointmentUncheckedCreateInput, "appointmentId" | "clinicId">;
     allowOverride?: boolean;
   }
 ) {
-  const { data, allowOverride = false } = opts;
+  const { clinicId, timezone, data, allowOverride = false } = opts;
 
   return prisma.$transaction(
     async (tx) => {
       if (!allowOverride) {
-        await checkSlotConflict(tx, data.preferredDateTime as Date);
+        await checkSlotConflict(tx, clinicId, data.preferredDateTime as Date);
       }
-      const appointmentId = await generateAppointmentId(tx);
-      return tx.appointment.create({ data: { ...data, appointmentId } });
+      const appointmentId = await generateAppointmentId(tx, clinicId, timezone);
+      return tx.appointment.create({ data: { ...data, clinicId, appointmentId } });
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
   );
@@ -78,18 +83,19 @@ export async function createAppointmentAtomic(
 export async function updateAppointmentAtomic(
   prisma: PrismaClient,
   opts: {
+    clinicId: string;
     id: string;
     data: Record<string, unknown>;
     newPreferredDateTime?: Date;
     allowOverride?: boolean;
   }
 ) {
-  const { id, data, newPreferredDateTime, allowOverride = false } = opts;
+  const { clinicId, id, data, newPreferredDateTime, allowOverride = false } = opts;
 
   return prisma.$transaction(
     async (tx) => {
       if (newPreferredDateTime && !allowOverride) {
-        await checkSlotConflict(tx, newPreferredDateTime, id);
+        await checkSlotConflict(tx, clinicId, newPreferredDateTime, id);
       }
       return tx.appointment.update({
         where: { id },

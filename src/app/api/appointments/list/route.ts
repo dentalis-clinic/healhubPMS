@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const { searchParams } = request.nextUrl;
     const q = searchParams.get("q")?.trim() ?? "";
@@ -36,10 +37,10 @@ export async function GET(request: NextRequest) {
     };
     const orderBy = allowedSortColumns[sortBy] ?? { createdAt: sortOrder };
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { clinicId: clinic.id };
 
     if (dateFilter === "today" || dateFilter === "upcoming") {
-      const now = DateTime.now().setZone("Asia/Kolkata");
+      const now = DateTime.now().setZone(clinic.timezone);
       const todayStart = now.startOf("day").toJSDate();
       const tomorrowStart = now.plus({ days: 1 }).startOf("day").toJSDate();
 
@@ -55,7 +56,6 @@ export async function GET(request: NextRequest) {
       where.status = statusFilter as AppointmentStatus;
     }
 
-    // Type filter maps to visitType or bookingChannel
     if (typeFilter === "FOLLOW_UP") {
       where.visitType = "FOLLOW_UP" as VisitType;
     } else if (typeFilter === "ONLINE") {
@@ -79,7 +79,6 @@ export async function GET(request: NextRequest) {
       payments: { select: { amount: true, method: true } },
     } as const;
 
-    // Status transitions handled by Supabase pg_cron (scripts/setup-pg-cron.sql).
     const [total, appointments] = await Promise.all([
       prisma.appointment.count({ where }),
       prisma.appointment.findMany({
@@ -102,7 +101,7 @@ export async function GET(request: NextRequest) {
         preferredDateTime: a.preferredDateTime.toISOString(),
         totalAmount: a.totalAmount != null ? Number(a.totalAmount) : null,
         totalPaid,
-        payments: undefined, // don't expose raw payment rows to client
+        payments: undefined,
         patient: {
           ...a.patient,
           createdAt: a.patient.createdAt.toISOString(),

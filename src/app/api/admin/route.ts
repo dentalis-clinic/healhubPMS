@@ -18,7 +18,10 @@ export async function GET() {
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
 
+    const { clinic } = auth;
+
     const admins = await prisma.admin.findMany({
+      where: { clinicId: clinic.id },
       orderBy: { createdAt: "asc" },
     });
 
@@ -47,6 +50,7 @@ export async function POST(request: NextRequest) {
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     // Validate body
     const body = await request.json();
@@ -93,11 +97,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create matching admin record in our database
+    // Create matching admin record in our database (same clinic as requesting admin)
     try {
       const admin = await prisma.admin.create({
         data: {
           id: authData.user.id,
+          clinicId: clinic.id,
           email,
           name,
         },

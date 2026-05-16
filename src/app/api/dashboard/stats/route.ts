@@ -14,27 +14,31 @@ export async function GET() {
   try {
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
-    const now = DateTime.now().setZone("Asia/Kolkata");
+    const now = DateTime.now().setZone(clinic.timezone);
     const todayStart = now.startOf("day").toJSDate();
     const tomorrowStart = now.plus({ days: 1 }).startOf("day").toJSDate();
+    const clinicId = clinic.id;
 
-    // Single query with conditional aggregation — replaces 4 separate COUNT queries
     const [stats] = await prisma.$queryRaw<StatsRow[]>`
       SELECT
         COUNT(*) FILTER (
-          WHERE "preferredDateTime" >= ${todayStart}
+          WHERE "clinicId" = ${clinicId}
+            AND "preferredDateTime" >= ${todayStart}
             AND "preferredDateTime" < ${tomorrowStart}
         ) AS today_appointments,
         COUNT(*) FILTER (
-          WHERE status IN ('PENDING', 'OVERDUE')
+          WHERE "clinicId" = ${clinicId}
+            AND status IN ('PENDING', 'OVERDUE')
         ) AS pending_confirmations,
         COUNT(*) FILTER (
-          WHERE status = 'COMPLETED'
+          WHERE "clinicId" = ${clinicId}
+            AND status = 'COMPLETED'
             AND "preferredDateTime" >= ${todayStart}
             AND "preferredDateTime" < ${tomorrowStart}
         ) AS patients_seen_today,
-        (SELECT COUNT(*) FROM patients) AS total_patients
+        (SELECT COUNT(*) FROM patients WHERE "clinicId" = ${clinicId}) AS total_patients
       FROM appointments
     `;
 

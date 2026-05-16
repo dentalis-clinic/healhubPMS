@@ -15,8 +15,10 @@ export async function GET() {
   try {
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const templates = await prisma.printable_templates.findMany({
+      where: { clinicId: clinic.id },
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
@@ -49,6 +51,7 @@ export async function POST(request: NextRequest) {
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const body = await request.json();
     const parsed = createSchema.safeParse(body);
@@ -61,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     const template = await prisma.printable_templates.create({
-      data: parsed.data,
+      data: { clinicId: clinic.id, ...parsed.data },
     });
 
     return NextResponse.json({

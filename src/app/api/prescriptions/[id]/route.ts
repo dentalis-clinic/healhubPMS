@@ -1,43 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth/require-admin";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAdmin();
+    if (auth.error) return auth.error;
+    const { clinic } = auth;
+
     const { id } = await params;
-
-    // Auth check
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const admin = await prisma.admin.findUnique({ where: { id: user.id } });
-    if (!admin) {
-      return NextResponse.json(
-        { success: false, error: "Forbidden" },
-        { status: 403 }
-      );
-    }
 
     // Support lookup by UUID or prescriptionId (RX-...)
     const isRxId = id.startsWith("RX-");
     const prescription = await prisma.prescription.findUnique({
-      where: isRxId ? { prescriptionId: id } : { id },
+      where: isRxId
+        ? { prescriptionId: id, clinicId: clinic.id }
+        : { id, clinicId: clinic.id },
       include: {
-        appointment: {
-          include: { patient: true },
-        },
+        appointment: { include: { patient: true } },
         prescribedBy: { select: { id: true, name: true, email: true } },
       },
     });
@@ -49,7 +32,6 @@ export async function GET(
       );
     }
 
-    // Serialize dates
     const serialized = {
       ...prescription,
       createdAt: prescription.createdAt.toISOString(),
@@ -59,14 +41,11 @@ export async function GET(
         ...prescription.appointment,
         createdAt: prescription.appointment.createdAt.toISOString(),
         updatedAt: prescription.appointment.updatedAt.toISOString(),
-        preferredDateTime:
-          prescription.appointment.preferredDateTime.toISOString(),
+        preferredDateTime: prescription.appointment.preferredDateTime.toISOString(),
         patient: {
           ...prescription.appointment.patient,
-          createdAt:
-            prescription.appointment.patient.createdAt.toISOString(),
-          updatedAt:
-            prescription.appointment.patient.updatedAt.toISOString(),
+          createdAt: prescription.appointment.patient.createdAt.toISOString(),
+          updatedAt: prescription.appointment.patient.updatedAt.toISOString(),
           age: prescription.appointment.patient.age,
         },
       },

@@ -35,6 +35,13 @@ async function main() {
     process.exit(1);
   }
 
+  // Look up the DDCJ clinic (seeded by migration)
+  const clinic = await prisma.clinic.findUnique({ where: { slug: "ddcj" } });
+  if (!clinic) {
+    console.error("DDCJ clinic not found. Run `npx prisma migrate deploy` first.");
+    process.exit(1);
+  }
+
   // Check if admin already exists in our table
   const existing = await prisma.admin.findUnique({ where: { email } });
   if (existing) {
@@ -68,6 +75,7 @@ async function main() {
   const admin = await prisma.admin.create({
     data: {
       id: userId, // Same UUID as Supabase auth.users
+      clinicId: clinic.id,
       email,
       name,
     },

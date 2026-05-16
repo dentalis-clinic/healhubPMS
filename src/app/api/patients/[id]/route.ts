@@ -19,9 +19,9 @@ export async function PATCH(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
-    // Find patient
-    const existing = await prisma.patient.findUnique({ where: { id } });
+    const existing = await prisma.patient.findUnique({ where: { id, clinicId: clinic.id } });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "Patient not found" },
@@ -29,7 +29,6 @@ export async function PATCH(
       );
     }
 
-    // Validate body
     const body = await request.json();
     const parsed = patchPatientSchema.safeParse(body);
 
@@ -42,40 +41,31 @@ export async function PATCH(
     }
 
     const data = parsed.data;
-
-    // Build update data
     const updateData: Record<string, unknown> = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.email !== undefined) updateData.email = data.email || null;
     if (data.age !== undefined) updateData.age = data.age ?? null;
     if (data.sex !== undefined) updateData.sex = data.sex;
 
-    // Normalize phone if provided
     if (data.phone !== undefined) {
       try {
         updateData.phone = normalizePhoneNumber(data.phone);
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Invalid phone number";
-        return NextResponse.json(
-          { success: false, error: message },
-          { status: 400 }
-        );
+        const message = err instanceof Error ? err.message : "Invalid phone number";
+        return NextResponse.json({ success: false, error: message }, { status: 400 });
       }
     }
 
-    const updated = await prisma.patient.update({
-      where: { id },
-      data: updateData,
+    const updated = await prisma.patient.update({ where: { id }, data: updateData });
+
+    return NextResponse.json({
+      success: true,
+      patient: {
+        ...updated,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      },
     });
-
-    const patient = {
-      ...updated,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-    };
-
-    return NextResponse.json({ success: true, patient });
   } catch (error) {
     console.error("PATCH /api/patients/[id] error:", error);
     return NextResponse.json(
@@ -97,8 +87,9 @@ export async function DELETE(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
-    const existing = await prisma.patient.findUnique({ where: { id } });
+    const existing = await prisma.patient.findUnique({ where: { id, clinicId: clinic.id } });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "Patient not found" },
@@ -106,7 +97,6 @@ export async function DELETE(
       );
     }
 
-    // Cascade: prescriptions → appointments → patient
     await prisma.$transaction(async (tx) => {
       const appointments = await tx.appointment.findMany({
         where: { patientId: id },
@@ -115,9 +105,8 @@ export async function DELETE(
       const appointmentIds = appointments.map((a) => a.id);
 
       if (appointmentIds.length > 0) {
-        await tx.prescription.deleteMany({
-          where: { appointmentId: { in: appointmentIds } },
-        });
+        await tx.prescription.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+        await tx.payment.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
         await tx.appointment.deleteMany({ where: { patientId: id } });
       }
 

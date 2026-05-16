@@ -13,9 +13,8 @@ export async function POST(request: NextRequest) {
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
-    const { user } = auth;
+    const { user, clinic } = auth;
 
-    // Validate body
     const body = await request.json();
     const parsed = prescriptionSchema.safeParse(body);
 
@@ -29,9 +28,8 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data;
 
-    // Verify appointment exists and is not cancelled
     const appointment = await prisma.appointment.findUnique({
-      where: { id: data.appointmentId },
+      where: { id: data.appointmentId, clinicId: clinic.id },
       include: { prescription: true },
     });
 
@@ -56,8 +54,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create prescription (auto-confirms appointment inside transaction)
     const { prescriptionId, record } = await createPrescriptionWithId(prisma, {
+      clinicId: clinic.id,
+      timezone: clinic.timezone,
       appointmentId: data.appointmentId,
       diagnosis: data.diagnosis,
       medications: data.medications,
@@ -77,7 +76,6 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    // Handle unique constraint violation (concurrent creation)
     if (
       error instanceof Error &&
       "code" in error &&

@@ -12,6 +12,7 @@ export async function DELETE(request: NextRequest) {
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const body = await request.json();
     const parsed = bulkDeleteSchema.safeParse(body);
@@ -26,25 +27,22 @@ export async function DELETE(request: NextRequest) {
 
     const { ids } = parsed.data;
 
-    // Delete prescriptions first (FK constraint), then appointments — atomically
     const deleted = await prisma.$transaction(async (tx) => {
-      // Remove associated prescriptions
-      await tx.prescription.deleteMany({
-        where: { appointmentId: { in: ids } },
+      // Verify all appointments belong to this clinic before deleting
+      const toDelete = await tx.appointment.findMany({
+        where: { clinicId: clinic.id, id: { in: ids } },
+        select: { id: true },
       });
+      const safeIds = toDelete.map((a) => a.id);
 
-      // Delete appointments
-      const result = await tx.appointment.deleteMany({
-        where: { id: { in: ids } },
-      });
+      if (safeIds.length === 0) return 0;
 
+      await tx.prescription.deleteMany({ where: { appointmentId: { in: safeIds } } });
+      const result = await tx.appointment.deleteMany({ where: { id: { in: safeIds } } });
       return result.count;
     });
 
-    return NextResponse.json({
-      success: true,
-      deleted,
-    });
+    return NextResponse.json({ success: true, deleted });
   } catch (error) {
     console.error("DELETE /api/appointments/bulk-delete error:", error);
     return NextResponse.json(

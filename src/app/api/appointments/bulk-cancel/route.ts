@@ -12,6 +12,7 @@ export async function PATCH(request: NextRequest) {
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const body = await request.json();
     const parsed = bulkCancelSchema.safeParse(body);
@@ -26,24 +27,18 @@ export async function PATCH(request: NextRequest) {
 
     const { ids } = parsed.data;
 
-    // Only cancel appointments that are PENDING or OVERDUE
     const result = await prisma.appointment.updateMany({
       where: {
+        clinicId: clinic.id,
         id: { in: ids },
         status: { in: ["PENDING", "OVERDUE"] },
       },
-      data: {
-        status: "CANCELLED",
-      },
+      data: { status: "CANCELLED" },
     });
 
     const skipped = ids.length - result.count;
 
-    return NextResponse.json({
-      success: true,
-      cancelled: result.count,
-      skipped,
-    });
+    return NextResponse.json({ success: true, cancelled: result.count, skipped });
   } catch (error) {
     console.error("PATCH /api/appointments/bulk-cancel error:", error);
     return NextResponse.json(

@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get("search")?.trim() ?? "";
@@ -17,6 +18,7 @@ export async function GET(request: NextRequest) {
 
     const where = search
       ? {
+          clinicId: clinic.id,
           OR: [
             { name: { contains: search, mode: "insensitive" as const } },
             { phone: { contains: search } },
@@ -24,7 +26,7 @@ export async function GET(request: NextRequest) {
             { email: { contains: search, mode: "insensitive" as const } },
           ],
         }
-      : {};
+      : { clinicId: clinic.id };
 
     const [patients, total] = await Promise.all([
       prisma.patient.findMany({
@@ -70,13 +72,7 @@ export async function GET(request: NextRequest) {
           : null,
     }));
 
-    return NextResponse.json({
-      success: true,
-      patients: result,
-      total,
-      page,
-      limit,
-    });
+    return NextResponse.json({ success: true, patients: result, total, page, limit });
   } catch (error) {
     console.error("GET /api/patients error:", error);
     return NextResponse.json(
@@ -93,6 +89,7 @@ export async function DELETE(request: NextRequest) {
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const body = await request.json();
     const ids: unknown = body.ids;
@@ -107,20 +104,28 @@ export async function DELETE(request: NextRequest) {
     const patientIds = ids as string[];
 
     await prisma.$transaction(async (tx) => {
+      // Only delete patients belonging to this clinic
+      const patients = await tx.patient.findMany({
+        where: { clinicId: clinic.id, id: { in: patientIds } },
+        select: { id: true },
+      });
+      const safePatientIds = patients.map((p) => p.id);
+
+      if (safePatientIds.length === 0) return;
+
       const appointments = await tx.appointment.findMany({
-        where: { patientId: { in: patientIds } },
+        where: { patientId: { in: safePatientIds } },
         select: { id: true },
       });
       const appointmentIds = appointments.map((a) => a.id);
 
       if (appointmentIds.length > 0) {
-        await tx.prescription.deleteMany({
-          where: { appointmentId: { in: appointmentIds } },
-        });
-        await tx.appointment.deleteMany({ where: { patientId: { in: patientIds } } });
+        await tx.prescription.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+        await tx.payment.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+        await tx.appointment.deleteMany({ where: { patientId: { in: safePatientIds } } });
       }
 
-      await tx.patient.deleteMany({ where: { id: { in: patientIds } } });
+      await tx.patient.deleteMany({ where: { id: { in: safePatientIds } } });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     return NextResponse.json({ success: true, deleted: patientIds.length });

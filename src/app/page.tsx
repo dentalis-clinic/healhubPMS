@@ -1,8 +1,15 @@
 import Link from "next/link";
 import Image from "next/image";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import PublicBookingForm from "@/components/booking/PublicBookingForm";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const h = await headers();
+  if (!h.get("x-clinic-id")) redirect("/register");
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-secondary px-4">
       <div className="w-full max-w-sm space-y-6">

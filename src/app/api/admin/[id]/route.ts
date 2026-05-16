@@ -22,7 +22,7 @@ export async function PATCH(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
-    const { user } = auth;
+    const { user, clinic } = auth;
 
     const { id } = await params;
 
@@ -46,7 +46,7 @@ export async function PATCH(
       );
     }
 
-    const target = await prisma.admin.findUnique({ where: { id } });
+    const target = await prisma.admin.findUnique({ where: { id, clinicId: clinic.id } });
     if (!target) {
       return NextResponse.json(
         { success: false, error: "Admin not found." },
@@ -118,7 +118,7 @@ export async function DELETE(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
-    const { user } = auth;
+    const { user, clinic } = auth;
 
     const { id } = await params;
 
@@ -130,8 +130,8 @@ export async function DELETE(
       );
     }
 
-    // Cannot delete last admin
-    const adminCount = await prisma.admin.count();
+    // Cannot delete last admin in this clinic
+    const adminCount = await prisma.admin.count({ where: { clinicId: clinic.id } });
     if (adminCount <= 1) {
       return NextResponse.json(
         { success: false, error: "Cannot delete the last admin." },
@@ -139,7 +139,7 @@ export async function DELETE(
       );
     }
 
-    const target = await prisma.admin.findUnique({ where: { id } });
+    const target = await prisma.admin.findUnique({ where: { id, clinicId: clinic.id } });
     if (!target) {
       return NextResponse.json(
         { success: false, error: "Admin not found." },

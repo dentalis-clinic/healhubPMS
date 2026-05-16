@@ -1,8 +1,7 @@
 import { PrismaClient, Prisma } from "@/generated/prisma/client";
-import { getCurrentISTDate } from "./date";
+import { getClinicDate } from "./date";
 import type { TxClient } from "./patient-id";
 
-const PRESCRIPTION_PREFIX = "RX";
 const MAX_RETRIES = 3;
 
 /**
@@ -11,13 +10,15 @@ const MAX_RETRIES = 3;
  */
 export async function generatePrescriptionId(
   tx: TxClient,
+  clinicId: string,
+  timezone: string,
   retryOffset = 0
 ): Promise<string> {
-  const todayIST = getCurrentISTDate();
-  const prefix = `${PRESCRIPTION_PREFIX}-${todayIST}`;
+  const todayDate = getClinicDate(timezone);
+  const prefix = `RX-${todayDate}`;
 
   const todayCount = await tx.prescription.count({
-    where: { prescriptionId: { startsWith: prefix } },
+    where: { clinicId, prescriptionId: { startsWith: prefix } },
   });
 
   const serial = (todayCount + 1 + retryOffset).toString().padStart(4, "0");
@@ -31,6 +32,8 @@ export async function generatePrescriptionId(
 export async function createPrescriptionWithId(
   prisma: PrismaClient,
   data: {
+    clinicId: string;
+    timezone: string;
     appointmentId: string;
     diagnosis: string;
     medications: unknown;
@@ -44,9 +47,10 @@ export async function createPrescriptionWithId(
     try {
       const result = await prisma.$transaction(
         async (tx) => {
-          const prescriptionId = await generatePrescriptionId(tx, attempt);
+          const prescriptionId = await generatePrescriptionId(tx, data.clinicId, data.timezone, attempt);
           const record = await tx.prescription.create({
             data: {
+              clinicId: data.clinicId,
               prescriptionId,
               appointmentId: data.appointmentId,
               diagnosis: data.diagnosis,
@@ -58,7 +62,6 @@ export async function createPrescriptionWithId(
             },
           });
 
-          // Auto-confirm the appointment
           await tx.appointment.update({
             where: { id: data.appointmentId },
             data: { status: "CONFIRMED" },
@@ -80,7 +83,5 @@ export async function createPrescriptionWithId(
     }
   }
 
-  throw new Error(
-    "Failed to generate unique prescription ID after max retries"
-  );
+  throw new Error("Failed to generate unique prescription ID after max retries");
 }

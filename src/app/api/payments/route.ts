@@ -9,7 +9,6 @@ const createPaymentSchema = z.object({
   amount: z.number().positive("Amount must be greater than 0"),
   method: z.enum(["CASH", "UPI", "CARD", "WAIVED", "OTHER"]),
   notes: z.string().max(500).optional().nullable(),
-  // paidAt defaults to now() — optionally allow admin to record past payments
   paidAt: z.string().datetime().optional(),
 });
 
@@ -20,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
-    const { admin } = auth;
+    const { admin, clinic } = auth;
 
     const body = await request.json();
     const parsed = createPaymentSchema.safeParse(body);
@@ -34,9 +33,8 @@ export async function POST(request: NextRequest) {
 
     const { appointmentId, amount, method, notes, paidAt } = parsed.data;
 
-    // Verify appointment exists and is in a billable status
     const appointment = await prisma.appointment.findUnique({
-      where: { id: appointmentId },
+      where: { id: appointmentId, clinicId: clinic.id },
       select: { id: true, status: true, totalAmount: true },
     });
 
@@ -56,6 +54,7 @@ export async function POST(request: NextRequest) {
 
     const payment = await prisma.payment.create({
       data: {
+        clinicId: clinic.id,
         appointmentId,
         amount,
         method,
@@ -63,9 +62,7 @@ export async function POST(request: NextRequest) {
         paidAt: paidAt ? new Date(paidAt) : new Date(),
         recordedById: admin.id,
       },
-      include: {
-        recordedBy: { select: { id: true, name: true } },
-      },
+      include: { recordedBy: { select: { id: true, name: true } } },
     });
 
     return NextResponse.json(
@@ -97,6 +94,7 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const { searchParams } = new URL(request.url);
     const appointmentId = searchParams.get("appointmentId");
@@ -109,15 +107,12 @@ export async function GET(request: NextRequest) {
     }
 
     const payments = await prisma.payment.findMany({
-      where: { appointmentId },
-      include: {
-        recordedBy: { select: { id: true, name: true } },
-      },
+      where: { clinicId: clinic.id, appointmentId },
+      include: { recordedBy: { select: { id: true, name: true } } },
       orderBy: { paidAt: "asc" },
     });
 
-    const totalPaid = payments
-      .reduce((sum, p) => sum + Number(p.amount), 0);
+    const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
 
     return NextResponse.json({
       success: true,

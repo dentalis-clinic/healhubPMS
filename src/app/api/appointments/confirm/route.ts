@@ -10,11 +10,10 @@ import { checkSlotConflict, SlotConflictError } from "@/lib/utils/slot-conflict"
 import { validateOrigin } from "@/lib/utils/csrf";
 import type { Sex } from "@/generated/prisma/client";
 
-/** Valid status transitions (subset used here). */
 const VALID_TRANSITIONS: Record<string, string[]> = {
   PENDING: ["CONFIRMED", "CANCELLED"],
   OVERDUE: ["CONFIRMED", "CANCELLED"],
-  TENTATIVE: ["CONFIRMED", "CANCELLED"], // DEPRECATED: backward compat
+  TENTATIVE: ["CONFIRMED", "CANCELLED"],
 };
 
 export async function POST(request: NextRequest) {
@@ -24,9 +23,8 @@ export async function POST(request: NextRequest) {
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
-    const { admin, user } = auth;
+    const { admin, clinic } = auth;
 
-    // Validate
     const body = await request.json();
     const parsed = confirmAppointmentSchema.safeParse(body);
 
@@ -39,13 +37,11 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parsed.data;
-
-    // Extract allowOverride flag (admin can force double-booking)
     const allowOverride = body.allowOverride === true;
 
-    // Validate doctor exists and is active
+    // Validate doctor exists, is active, and belongs to this clinic
     const doctor = await prisma.doctor.findUnique({
-      where: { id: data.doctorId, isActive: true },
+      where: { id: data.doctorId, clinicId: clinic.id, isActive: true },
     });
     if (!doctor) {
       return NextResponse.json(
@@ -54,23 +50,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Normalize phone
     let normalizedPhone: string;
     try {
       normalizedPhone = normalizePhoneNumber(data.phone);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Invalid phone number";
-      return NextResponse.json(
-        { success: false, error: message },
-        { status: 400 }
-      );
+      const message = err instanceof Error ? err.message : "Invalid phone number";
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
     }
 
-    // --- Flow A: Confirm existing TENTATIVE appointment ---
+    // --- Flow A: Confirm existing PENDING/OVERDUE appointment ---
     if (data.existingAppointmentId) {
       const appointment = await prisma.appointment.findUnique({
-        where: { id: data.existingAppointmentId },
+        where: { id: data.existingAppointmentId, clinicId: clinic.id },
         include: { patient: true },
       });
 
@@ -83,18 +74,13 @@ export async function POST(request: NextRequest) {
 
       if (!VALID_TRANSITIONS[appointment.status]?.includes("CONFIRMED")) {
         return NextResponse.json(
-          {
-            success: false,
-            error: `Cannot confirm appointment with status "${appointment.status}"`,
-          },
+          { success: false, error: `Cannot confirm appointment with status "${appointment.status}"` },
           { status: 400 }
         );
       }
 
-      // Update patient demographics + confirm appointment atomically
       const patientUpdates: Record<string, unknown> = {};
-      if (data.name && data.name !== appointment.patient.name)
-        patientUpdates.name = data.name;
+      if (data.name && data.name !== appointment.patient.name) patientUpdates.name = data.name;
       if (data.sex) patientUpdates.sex = data.sex as Sex;
       if (data.email) patientUpdates.email = data.email;
       if (data.address) patientUpdates.address = data.address;
@@ -110,7 +96,7 @@ export async function POST(request: NextRequest) {
           }
 
           if (!allowOverride) {
-            await checkSlotConflict(tx, data.preferredDateTime, appointment.id);
+            await checkSlotConflict(tx, clinic.id, data.preferredDateTime, appointment.id);
           }
 
           return tx.appointment.update({
@@ -139,10 +125,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- Flow B: New appointment for existing patient (selected from dropdown) ---
+    // --- Flow B: New appointment for existing patient ---
     if (data.existingPatientId) {
       const patient = await prisma.patient.findUnique({
-        where: { id: data.existingPatientId },
+        where: { id: data.existingPatientId, clinicId: clinic.id },
       });
 
       if (!patient) {
@@ -152,7 +138,6 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Update patient demographics if provided
       const patientUpdates: Record<string, unknown> = {};
       if (data.sex) patientUpdates.sex = data.sex as Sex;
       if (data.email && !patient.email) patientUpdates.email = data.email;
@@ -160,25 +145,20 @@ export async function POST(request: NextRequest) {
       if (data.age != null && patient.age == null) patientUpdates.age = data.age;
 
       if (Object.keys(patientUpdates).length > 0) {
-        await prisma.patient.update({
-          where: { id: patient.id },
-          data: patientUpdates,
-        });
+        await prisma.patient.update({ where: { id: patient.id }, data: patientUpdates });
       }
 
-      const appointmentType =
-        data.visitType === "FOLLOW_UP" ? "FOLLOW_UP" : "WALK_IN";
+      const appointmentType = data.visitType === "FOLLOW_UP" ? "FOLLOW_UP" : "WALK_IN";
 
-      // Create appointment atomically with slot conflict check
       const appointment = await prisma.$transaction(
         async (tx) => {
           if (!allowOverride) {
-            await checkSlotConflict(tx, data.preferredDateTime);
+            await checkSlotConflict(tx, clinic.id, data.preferredDateTime);
           }
-
-          const appointmentId = await generateAppointmentId(tx);
+          const appointmentId = await generateAppointmentId(tx, clinic.id, clinic.timezone);
           return tx.appointment.create({
             data: {
+              clinicId: clinic.id,
               appointmentId,
               patientId: patient.id,
               type: appointmentType,
@@ -209,25 +189,28 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Flow C: Brand new patient ---
-    const { patientId, patient } = await findOrCreatePatient(prisma, {
-      name: data.name,
-      phone: normalizedPhone,
-      email: data.email || null,
-      age: data.age ?? null,
-      sex: (data.sex as Sex) || null,
-      address: data.address || null,
-    });
+    const { patientId, patient } = await findOrCreatePatient(
+      prisma,
+      {
+        name: data.name,
+        phone: normalizedPhone,
+        email: data.email || null,
+        age: data.age ?? null,
+        sex: (data.sex as Sex) || null,
+        address: data.address || null,
+      },
+      { id: clinic.id, shortName: clinic.shortName, timezone: clinic.timezone }
+    );
 
-    // Create appointment atomically with slot conflict check
     const appointment = await prisma.$transaction(
       async (tx) => {
         if (!allowOverride) {
-          await checkSlotConflict(tx, data.preferredDateTime);
+          await checkSlotConflict(tx, clinic.id, data.preferredDateTime);
         }
-
-        const appointmentId = await generateAppointmentId(tx);
+        const appointmentId = await generateAppointmentId(tx, clinic.id, clinic.timezone);
         return tx.appointment.create({
           data: {
+            clinicId: clinic.id,
             appointmentId,
             patientId: patient.id,
             type: "WALK_IN",

@@ -7,6 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const searchParams = request.nextUrl.searchParams;
     const phone = searchParams.get("phone");
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     const patients = await prisma.patient.findMany({
-      where: { phone: normalizedPhone },
+      where: { clinicId: clinic.id, phone: normalizedPhone },
       select: {
         id: true,
         patientId: true,

@@ -4,13 +4,16 @@ import { normalizePhoneNumber } from "@/lib/utils/phone";
 import { maskName } from "@/lib/utils/mask-name";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
 import { generatePatientToken } from "@/lib/utils/patient-token";
+import { getClinicContext } from "@/lib/utils/clinic-context";
 import type { PhoneCheckStatus, MaskedPatient } from "@/types/patient";
 
 const PHONE_CHECK_RATE_LIMIT = 10;
 
 export async function GET(request: NextRequest) {
   try {
-    // Rate limit: 10 checks per IP per hour
+    const { clinic, error } = getClinicContext(request);
+    if (error) return error;
+
     const ip =
       request.headers.get("x-real-ip") ??
       request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
@@ -29,28 +32,18 @@ export async function GET(request: NextRequest) {
 
     const phone = request.nextUrl.searchParams.get("phone");
     if (!phone) {
-      return NextResponse.json({
-        success: true,
-        status: "new" as PhoneCheckStatus,
-        patients: [],
-      });
+      return NextResponse.json({ success: true, status: "new" as PhoneCheckStatus, patients: [] });
     }
 
-    // Normalize — invalid phones return "new" (don't leak validation info)
     let normalizedPhone: string;
     try {
       normalizedPhone = normalizePhoneNumber(phone);
     } catch {
-      return NextResponse.json({
-        success: true,
-        status: "new" as PhoneCheckStatus,
-        patients: [],
-      });
+      return NextResponse.json({ success: true, status: "new" as PhoneCheckStatus, patients: [] });
     }
 
-    // Query patients + their latest PENDING/OVERDUE appointment (future only)
     const patients = await prisma.patient.findMany({
-      where: { phone: normalizedPhone },
+      where: { clinicId: clinic.clinicId, phone: normalizedPhone },
       select: {
         id: true,
         name: true,
@@ -67,40 +60,26 @@ export async function GET(request: NextRequest) {
     });
 
     if (patients.length === 0) {
-      // Anti-enumeration: add random jitter (200-400ms)
       await delay(200 + Math.random() * 200);
-      return NextResponse.json({
-        success: true,
-        status: "new" as PhoneCheckStatus,
-        patients: [],
-      });
+      return NextResponse.json({ success: true, status: "new" as PhoneCheckStatus, patients: [] });
     }
 
     const maskedPatients: MaskedPatient[] = patients.map((p) => {
       const hasPending = p.appointments.length > 0;
       return {
-        id: generatePatientToken(p.id), // Opaque token instead of UUID
+        id: generatePatientToken(p.id),
         maskedName: maskName(p.name),
         hasPending,
-        pendingDate: hasPending
-          ? p.appointments[0].preferredDateTime.toISOString()
-          : null,
+        pendingDate: hasPending ? p.appointments[0].preferredDateTime.toISOString() : null,
       };
     });
 
     const hasAnyPending = maskedPatients.some((p) => p.hasPending);
-    const status: PhoneCheckStatus = hasAnyPending
-      ? "has_pending"
-      : "existing";
+    const status: PhoneCheckStatus = hasAnyPending ? "has_pending" : "existing";
 
-    // Anti-enumeration jitter
     await delay(200 + Math.random() * 200);
 
-    return NextResponse.json({
-      success: true,
-      status,
-      patients: maskedPatients,
-    });
+    return NextResponse.json({ success: true, status, patients: maskedPatients });
   } catch (error) {
     console.error("GET /api/phone-check error:", error);
     return NextResponse.json(

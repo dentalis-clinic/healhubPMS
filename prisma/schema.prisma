@@ -65,9 +65,37 @@ enum PaymentMethod {
 
 // --- Models ---
 
-/// Permanent person record. One patient = one DDCJ ID, many appointments.
+/// Clinic entity — one row per tenant.
+model Clinic {
+  id        String   @id @default(uuid())
+  slug      String   @unique // subdomain: ddcj.healthhub.app → "ddcj"
+  name      String
+  shortName String   // patient ID prefix, e.g. "DDCJ"
+  timezone  String   @default("Asia/Kolkata")
+  address   Json?    // { line1, line2, city, state, pincode }
+  phones    String[]
+  email     String?
+  website   String?
+  logo      String?  // path or URL
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patients           Patient[]
+  appointments       Appointment[]
+  doctors            Doctor[]
+  payments           Payment[]
+  prescriptions      Prescription[]
+  printableTemplates printable_templates[]
+  admins             Admin[]
+
+  @@map("clinics")
+}
+
+/// Permanent person record. One patient = one clinic-scoped ID, many appointments.
 model Patient {
   id          String    @id @default(uuid())
+  clinicId    String
   patientId   String    @unique // DDCJ-YYYYMMDD-XXXX (generated once, permanent)
   name        String
   phone       String    // 10-digit Indian mobile, normalized
@@ -78,8 +106,10 @@ model Patient {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  clinic       Clinic        @relation(fields: [clinicId], references: [id])
   appointments Appointment[]
 
+  @@index([clinicId])
   @@index([phone])
   @@index([patientId])
   @@map("patients")
@@ -88,6 +118,7 @@ model Patient {
 /// Visit/booking event linked to a patient.
 model Appointment {
   id                String            @id @default(uuid())
+  clinicId          String
   appointmentId     String            @unique // APT-YYYYMMDD-XXXX (generated once, permanent)
   patientId         String
 
@@ -110,12 +141,14 @@ model Appointment {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
+  clinic       Clinic        @relation(fields: [clinicId], references: [id])
   patient      Patient       @relation(fields: [patientId], references: [id])
   admin        Admin?        @relation("appointmentAdmin", fields: [adminUserId], references: [id])
   doctor       Doctor?       @relation("appointmentDoctor", fields: [doctorId], references: [id])
   prescription Prescription?
   payments     Payment[]
 
+  @@index([clinicId])
   @@index([appointmentId])
   @@index([patientId])
   @@index([status])
@@ -131,6 +164,7 @@ model Appointment {
 /// Treatment record. One per appointment. Prescription generation confirms the appointment.
 model Prescription {
   id             String    @id @default(uuid())
+  clinicId       String
   prescriptionId String    @unique // RX-YYYYMMDD-XXXX
   appointmentId  String    @unique // 1:1 with appointment
   diagnosis      String    @db.Text
@@ -142,9 +176,11 @@ model Prescription {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  clinic       Clinic      @relation(fields: [clinicId], references: [id])
   appointment  Appointment @relation(fields: [appointmentId], references: [id])
   prescribedBy Admin       @relation("prescriber", fields: [prescribedById], references: [id])
 
+  @@index([clinicId])
   @@index([prescriptionId])
   @@map("prescriptions")
 }
@@ -152,6 +188,7 @@ model Prescription {
 /// Doctor profile. Separate from Admin — doctors don't need login credentials.
 model Doctor {
   id                 String   @id @default(uuid())
+  clinicId           String
   name               String
   qualifications     String?
   registrationNumber String?
@@ -159,8 +196,10 @@ model Doctor {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  clinic       Clinic        @relation(fields: [clinicId], references: [id])
   appointments Appointment[] @relation("appointmentDoctor")
 
+  @@index([clinicId])
   @@map("doctors")
 }
 
@@ -168,6 +207,7 @@ model Doctor {
 /// Multiple entries per appointment support partial payments and waivers.
 model Payment {
   id            String        @id @default(uuid())
+  clinicId      String
   appointmentId String
   amount        Decimal       @db.Decimal(10, 2)
   method        PaymentMethod
@@ -176,9 +216,11 @@ model Payment {
   notes         String?       @db.Text
   createdAt     DateTime      @default(now())
 
+  clinic       Clinic      @relation(fields: [clinicId], references: [id])
   appointment  Appointment @relation(fields: [appointmentId], references: [id])
   recordedBy   Admin       @relation("paymentRecorder", fields: [recordedById], references: [id])
 
+  @@index([clinicId])
   @@index([appointmentId])
   @@index([paidAt])
   @@index([recordedById])
@@ -193,6 +235,7 @@ enum TemplateType {
 /// Custom printable document template (consent forms, post-treatment instructions, screening surveys, etc.)
 model printable_templates {
   id                 String       @id @default(uuid())
+  clinicId           String
   title              String
   templateType       TemplateType @default(DOCUMENT)
   showPatientDetails Boolean      @default(false)
@@ -200,20 +243,26 @@ model printable_templates {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@index([clinicId])
   @@map("printable_templates")
 }
 
 /// Admin/Doctor user. ID matches Supabase auth.users.id.
 model Admin {
   id        String   @id // From Supabase auth.users (shared UUID)
+  clinicId  String
   email     String   @unique
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  clinic        Clinic         @relation(fields: [clinicId], references: [id])
   appointments  Appointment[]  @relation("appointmentAdmin")
   prescriptions Prescription[] @relation("prescriber")
   payments      Payment[]      @relation("paymentRecorder")
 
+  @@index([clinicId])
   @@map("admins")
 }

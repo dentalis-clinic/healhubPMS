@@ -4,19 +4,67 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DentalisPMS is a dental clinic appointment booking system deployed as a cloud SaaS. Patients submit minimal appointment requests via a public form; clinic admins complete patient records and manage data through a protected dashboard. Architecture supports multi-tenancy for future expansion; Phase 1 targets a single clinic (prefix `DDCJ`).
+**HealthHub PMS** is a multi-tenant dental clinic management SaaS. It evolved from a single-clinic deployment (DentalisPMS for DDCJ — Dentalis Dental Care by Jamians) and is now being rebuilt as a cloud SaaS that multiple clinics can subscribe to and use independently.
 
-**Privacy commitment:** We never sell or share patient data. Data isolation is enforced at the application layer (row-level `clinicId` filtering in future phases).
+**This repository is the SaaS product codebase.** It is fully isolated from the original single-clinic deployment. Do not reference, connect to, or affect the original clinic's infrastructure in any way.
+
+### Infrastructure Split
+
+| | SaaS product (this repo) | Original clinic (hands-off) |
+|---|---|---|
+| GitHub | `mohdshakeb/healhubPMS` | `dentalis-clinic/pms` |
+| Supabase | `apuxomkxwtjcoaqjhlux` (ap-northeast-2) | `erezwhfjexvnvxqaihae` (ap-southeast-1) |
+| Vercel | New project (link via `vercel` CLI when ready) | `prj_iFvzmznya185EqJeL99DZhtTBLsE` |
+
+**Privacy commitment:** We never sell or share patient data. Data isolation between tenants is enforced at the application layer (`clinicId` filtering), with Supabase RLS as a future hardening step.
+
+## SaaS Roadmap
+
+### Phase 1 — Single-clinic MVP (DONE)
+Appointments, patients, prescriptions, payments, printable templates, doctor profiles, CSV export, public booking form. Fully functional for one clinic.
+
+### Phase 2 — Multi-tenancy Foundation (ACTIVE)
+The prerequisite for everything SaaS. Nothing else starts until this is complete.
+- Add `Clinic` model: `slug`, `name`, `shortName` (patient ID prefix), `timezone`, `address`, `phones`, `email`, `logo`, `isActive`
+- Add `clinicId` FK to every table: `patients`, `appointments`, `doctors`, `payments`, `prescriptions`, `printable_templates`, `admins`
+- Migrate DDCJ config from `src/lib/config/clinic.ts` (static file) into a `Clinic` DB row
+- Subdomain routing: `ddcj.healthhub.app`, `newclinic.healthhub.app` → Vercel wildcard domain
+- Middleware reads subdomain → looks up `Clinic` by slug → injects `clinicId` into all request contexts
+- Replace all hardcoded `Asia/Kolkata` (25+ files) with `clinic.timezone` from DB
+- Replace hardcoded `DDCJ` prefix with `clinic.shortName` from DB
+- All Prisma queries filter by `clinicId` — never return cross-clinic data
+- Data isolation: app-layer filtering now; Supabase RLS is a future hardening step
+
+### Phase 3 — Clinic Onboarding
+- Public signup at root domain (not a clinic subdomain)
+- Setup wizard: name → slug → address → logo → admin credentials
+- Creates `Clinic` + Supabase auth user + `Admin` record in one transaction
+- Welcome email with dashboard link
+
+### Phase 4 — Billing
+- Razorpay Subscriptions (India-native)
+- Middleware gates dashboard access on `clinic.subscriptionStatus`
+- Webhook handler for charge/cancel events
+- Billing portal page
+
+### Phase 5 — Per-Clinic Customisation
+- Settings page: edit clinic name, address, phones, logo, business hours
+- All stored in `Clinic` DB row — no more config files
+
+### Phase 6 — Patient Portal
+- OTP login via Supabase Auth (phone number)
+- Patients view their own appointments, prescriptions, payment receipts
+- Scoped to their phone + clinic
 
 ## Tech Stack
 
 - **Framework:** Next.js 16 with App Router
 - **Language:** TypeScript (strict)
 - **Database:** Supabase PostgreSQL with Prisma ORM (v7, @prisma/adapter-pg)
-- **Auth:** Supabase Auth (`@supabase/supabase-js` + `@supabase/ssr`) — email/password for admin. Future: magic link/OTP for patient portal.
+- **Auth:** Supabase Auth (`@supabase/supabase-js` + `@supabase/ssr`) — email/password for admin. Future: OTP for patient portal.
 - **Styling:** Tailwind CSS v4
 - **Validation:** Zod v4 (shared schemas for client + server)
-- **Date/Time:** Luxon — all IST operations must use `DateTime.now().setZone('Asia/Kolkata')`
+- **Date/Time:** Luxon — all timezone operations must use `clinic.timezone` from DB (currently `Asia/Kolkata` while Phase 2 is pending)
 - **CSV Export:** json2csv library
 - **Deployment:** Vercel (app) + Supabase (database + auth)
 - **Rate Limiting:** Upstash Redis (serverless-compatible) or Vercel KV
@@ -26,29 +74,29 @@ DentalisPMS is a dental clinic appointment booking system deployed as a cloud Sa
 - Never re-run commands to "verify" unless the outcome was uncertain.
 - Don't echo back large blocks of code or file contents unless asked.
 - Batch related edits into single operations. Don't make 5 edits when 1 handles it.
-- Skip confirmations like "I'll continue..."  Just do it.
+- Skip confirmations like "I'll continue..." Just do it.
 - If a task needs 1 tool call, don't use 3. Plan before acting.
 - Do not summarize what you just did unless the result is ambiguous or you need additional input.
 
 ## Coding
-- Always use Typescript
+- Always use TypeScript
 - Never use "any"
-- Use Luxon for all date/time operations (DateTime.now().setZone('Asia/Kolkata'))
+- Use Luxon for all date/time operations — use `clinic.timezone` (Phase 2+) or `'Asia/Kolkata'` (Phase 1 compatibility)
 
 ## Database
 - Prisma ORM with PostgreSQL via @prisma/adapter-pg + pg driver
-- Supabase PostgreSQL with connection pooling (pgBouncer)
-- Two connection strings: DATABASE_URL (pooled, port 6543) and DIRECT_URL (direct, port 5432)
-- Schema at prisma/schema.prisma
-- Generated client outputs to src/generated/prisma/
-- Database client singleton in src/lib/prisma.ts
+- Supabase PostgreSQL with connection pooling (Supavisor)
+- Two connection strings: `DATABASE_URL` (transaction pooler, port 6543) and `DIRECT_URL` (session pooler, port 5432)
+- Schema at `prisma/schema.prisma`
+- Generated client outputs to `src/generated/prisma/`
+- Database client singleton in `src/lib/prisma.ts`
 - Model names should always be plural, lowercase and snake_case. Never use CamelCase.
-- Environment uses .env for database connection
+- **Known schema drift:** The migration history has gaps — some columns and tables (`appointmentId`, `doctorId`, `doctors`, `printable_templates`, `patients.age`, `patients.address`) were added to the original DB via `db push` without migrations. The new SaaS DB was synced via `prisma migrate deploy` + `prisma db push`. When Phase 2 migrations are written, generate them cleanly from the current `schema.prisma` state.
 
 ## Auth (Supabase)
 - Supabase Auth handles user creation, login, sessions, and password management
-- Admin model in Prisma links to Supabase `auth.users` via shared UUID (`Admin.id` = `auth.users.id`)
-- Auth check pattern: authenticate via Supabase → check if user exists in `admins` table → authorize
+- `Admin.id` in Prisma matches Supabase `auth.users.id` (shared UUID)
+- Auth check pattern: authenticate via Supabase → check user exists in `admins` table → authorize
 - Server-side: use `createClient` from `@supabase/ssr` for cookie-based sessions
 - Client-side: use `createBrowserClient` from `@supabase/ssr`
 - Middleware: refresh session cookies on every request to `/admin/*`
@@ -59,6 +107,7 @@ DentalisPMS is a dental clinic appointment booking system deployed as a cloud Sa
 - Client vars: must use `NEXT_PUBLIC_` prefix (Next.js convention)
 - Validated at startup via Zod schemas in `src/env.ts`
 - Import as `import { env } from "@/env"`
+- Both `.env` (used by Prisma/dotenv) and `.env.local` (used by Next.js) must be kept in sync — both point to the SaaS Supabase project (`apuxomkxwtjcoaqjhlux`)
 
 ## Commands
 
@@ -71,7 +120,7 @@ npx tsc --noEmit     # Type-check without emitting
 
 # Database
 npx prisma migrate dev --name <name>   # Create and apply migration
-npx prisma db push                      # Push schema to DB (prototyping)
+npx prisma db push                      # Push schema to DB (prototyping only — avoid drift)
 npx prisma generate                     # Regenerate Prisma client
 npx prisma studio                       # Visual DB browser
 
@@ -83,7 +132,7 @@ npx tsx scripts/seed-admin.ts           # Create initial admin user (requires SU
 
 ### Two-Stage Data Entry
 
-Public form collects **minimal fields** (Name, Phone, Preferred Date/Time). When the patient arrives at the clinic, the admin **completes the record** with remaining data (DOB, Email, Reason for Visit). This means several fields in the Patient model are nullable despite being important for a complete record.
+Public form collects **minimal fields** (Name, Phone, Preferred Date/Time). When the patient arrives at the clinic, the admin **completes the record** with remaining data (DOB/age, Email, Reason for Visit). Several fields in the Patient model are nullable for this reason.
 
 ### Route Structure (App Router)
 
@@ -92,89 +141,63 @@ app/
   page.tsx                          — Public patient booking form (no auth, minimal fields)
   admin/
     login/page.tsx                  — Admin login (Supabase Auth)
-    dashboard/page.tsx              — Protected: full patient form + data table + CSV export
+    dashboard/                      — Protected: appointments, patients, reports, settings
   api/
-    appointments/route.ts           — POST: create patient record (public + admin)
-    appointments/[id]/route.ts      — PATCH: admin completes/updates a patient record
-    appointments/list/route.ts      — GET: patient list (admin only)
-    admin/route.ts                  — POST: create additional admin users (admin only)
-    auth/callback/route.ts          — Supabase auth callback (code exchange)
+    appointments/                   — CRUD for appointments (public POST + admin PATCH/GET)
+    patients/                       — Patient lookup and management
+    payments/                       — Payment recording and open bills
+    prescriptions/                  — Prescription creation and retrieval
+    printable-templates/            — Custom document template management
+    doctors/                        — Doctor profile management
+    admin/                          — Admin user management
+    reports/                        — Payment and appointment reports
+    auth/callback/route.ts          — Supabase auth callback
 middleware.ts                        — Supabase session refresh + protect /admin/* routes
 ```
 
-### Key Data Flows
-
-**Patient self-submission (public form, minimal fields):**
-Form (Name, Phone, Preferred Date/Time) → client Zod validation → `POST /api/appointments` → server Zod validation → normalize phone → generate patient ID in transaction → insert with `submittedBy: PATIENT` → return patientId
-
-**Admin completes record (clinic visit):**
-Admin finds patient by ID or phone → edits record → `PATCH /api/appointments/[id]` → adds DOB, Email, Reason → record now complete
-
-**Admin walk-in entry (full form):**
-Same as patient flow but with all fields filled, `submittedBy: ADMIN`, `adminUserId` set from session
-
 ### Patient ID Generation
 
-Format: `DDCJ-YYYYMMDD-XXXX` where date is IST and XXXX is a zero-padded daily serial.
+Format: `{CLINIC_PREFIX}-YYYYMMDD-XXXX` where prefix comes from `clinic.shortName` (e.g. `DDCJ`), date is in clinic's local timezone, and XXXX is a zero-padded daily serial.
 
 - Generated inside a Prisma `$transaction()` with serializable isolation to prevent race conditions
-- Uses `DateTime.now().setZone('Asia/Kolkata').toFormat('yyyyMMdd')` for the date component
+- Currently uses hardcoded `Asia/Kolkata` — Phase 2 will pass `clinic.timezone` dynamically
 - On unique constraint violation, retry up to 3 times with incremented serial
 
 ### Phone Number Normalization
 
-Strip non-digits → if 12 digits starting with `91`, drop the `91` → validate exactly 10 digits starting with 6-9 → reject all-same-digit patterns. Normalization happens server-side before storage.
+Strip non-digits → if 12 digits starting with `91`, drop the `91` → validate exactly 10 digits starting with 6-9 → reject all-same-digit patterns. Normalization happens server-side before storage. Currently India-only; will remain India-only for the foreseeable future.
 
-## Database
+## Multi-Tenancy Design Notes (for Phase 2)
 
-**PostgreSQL** via Prisma + Supabase.
-
-Two models: `Patient` and `Admin`, plus a `SubmissionSource` enum (`PATIENT | ADMIN`).
-
-- `Patient.id` is a UUID primary key; `Patient.patientId` is the human-readable ID (unique)
-- `Patient.adminUserId` is nullable (null for patient self-submissions)
-- `Patient.dateOfBirth`, `Patient.email`, `Patient.reasonForVisit` are nullable (filled in later by admin for public submissions)
-- `Patient.isComplete` boolean flag — false for partial public submissions, true when admin completes all fields
-- `Admin.id` matches Supabase `auth.users.id` (no `@default(uuid())` — set from Supabase)
-- `Admin` has no `passwordHash` — Supabase Auth manages credentials
-- Indexes on `phone`, `createdAt`, `patientId`
-- All timestamps stored in UTC; converted to IST for display only
-- Phone grouping uses `COUNT(*) OVER (PARTITION BY phone)` window function
+- **Tenant resolution:** subdomain → `Clinic.slug` lookup in middleware → `clinicId` injected into request headers
+- **Data isolation strategy:** app-layer `WHERE clinicId = ?` on every Prisma query. Supabase RLS is a future hardening step (before 20 clinics).
+- **Patient ID prefix:** `clinic.shortName` replaces the hardcoded `DDCJ` constant in `src/lib/utils/patient-id.ts`
+- **Timezone:** `clinic.timezone` replaces all hardcoded `'Asia/Kolkata'` strings. The constant `IST_ZONE` in `src/lib/utils/date.ts` should become a clinic config lookup.
+- **Clinic config file:** `src/lib/config/clinic.ts` is Phase 1 only — delete it in Phase 2 when config moves to DB.
 
 ## Critical Business Rules
 
-- **Timezone:** Always IST (`Asia/Kolkata`) via Luxon. Never use raw `new Date()` for IST calculations.
+- **Timezone:** Always use clinic's configured timezone via Luxon. During Phase 1 compatibility period, use `'Asia/Kolkata'`. Never use raw `new Date()` for timezone-sensitive calculations.
 - **Appointment window:** `preferredDateTime` must be after now and within 72 hours (server-enforced).
-- **Rate limiting:** 3 submissions per IP per hour on the public endpoint. Use Upstash Redis or Vercel KV (serverless-safe).
+- **Rate limiting:** 3 submissions per IP per hour on the public endpoint.
 - **Duplicate detection:** Same phone + name within 5 minutes → reject as duplicate.
 - **CSV export:** Always use json2csv (handles commas/quotes in data correctly).
+- **Cross-clinic data:** Never return data from one clinic to a request scoped to another clinic. This is the most important invariant in the SaaS system.
 
 ## Environment Variables
 
 ```
-NEXT_PUBLIC_SUPABASE_URL   — Supabase project URL (from Project Settings → API)
-NEXT_PUBLIC_SUPABASE_ANON_KEY — Supabase anon/public key (safe for client-side)
-SUPABASE_SERVICE_ROLE_KEY  — Supabase service role key (server-only, for admin operations like user creation)
-DATABASE_URL               — Supabase pooled connection (Transaction mode, port 6543) with ?pgbouncer=true
-DIRECT_URL                 — Supabase direct connection (Session mode, port 5432) for migrations
-TZ                         — Asia/Kolkata
-RATE_LIMIT_MAX             — Max submissions per window (default 3)
-RATE_LIMIT_WINDOW_MS       — Rate limit window in ms (default 3600000)
-UPSTASH_REDIS_URL          — (optional) Upstash Redis for rate limiting
-UPSTASH_REDIS_TOKEN        — (optional) Upstash Redis token
+NEXT_PUBLIC_SUPABASE_URL        — Supabase project URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY   — Supabase publishable/anon key (safe for client-side)
+SUPABASE_SERVICE_ROLE_KEY       — Supabase secret/service role key (server-only)
+DATABASE_URL                    — Transaction pooler (port 6543) with ?pgbouncer=true&connection_limit=1
+DIRECT_URL                      — Session pooler (port 5432) for migrations
+TZ                              — Asia/Kolkata
+RATE_LIMIT_MAX                  — Max submissions per window (default 3)
+RATE_LIMIT_WINDOW_MS            — Rate limit window in ms (default 3600000)
+UPSTASH_REDIS_URL               — (optional) Upstash Redis for rate limiting
+UPSTASH_REDIS_TOKEN             — (optional) Upstash Redis token
+CRON_SECRET                     — Secret for Vercel cron job authorization
 ```
 
-**Getting Supabase credentials:**
-1. Go to Supabase Dashboard → Project Settings → API
-2. Copy Project URL → `NEXT_PUBLIC_SUPABASE_URL`
-3. Copy `anon` `public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-4. Copy `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (keep secret!)
-5. Go to Project Settings → Database → Connection String
-6. Transaction mode (port 6543) → `DATABASE_URL` (add `?pgbouncer=true&connection_limit=1`)
-7. Session mode (port 5432) → `DIRECT_URL`
-
-## Future Considerations
-
-**Patient Authentication (Phase 2):** Supabase Auth natively supports magic link and OTP. Patients will authenticate to view prescriptions and appointment history. Add a `patient_accounts` table linking to `auth.users`, or match by phone number. No auth restructuring needed.
-
-**Multi-Tenant SaaS (Phase 3):** The schema is designed so that adding `clinicId` to Patient/Admin tables and making the `DDCJ` prefix configurable per clinic is the primary migration path. Supabase RLS (Row-Level Security) can enforce data isolation at the database level. See `PRDs/PRD_MVP.md` § "Technical Debt & Migration Notes" for the full checklist.
+> Both `.env` and `.env.local` must point to the SaaS Supabase project. `.env` is loaded by Prisma (via `prisma.config.ts` → `dotenv/config`). `.env.local` is loaded by Next.js. Keep them in sync.
