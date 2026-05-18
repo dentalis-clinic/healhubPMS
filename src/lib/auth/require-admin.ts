@@ -31,9 +31,8 @@ type RequireAdminResult = RequireAdminSuccess | RequireAdminError;
 export async function requireAdmin(): Promise<RequireAdminResult> {
   const supabase = await createClient();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const user = session?.user ?? null;
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
     return {

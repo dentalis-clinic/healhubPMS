@@ -13,6 +13,7 @@ interface DetailsStepProps {
   disabled: boolean;
   showNameField: boolean;
   contextMessage: string | null;
+  timezone?: string;
 }
 
 export function DetailsStep({
@@ -25,6 +26,7 @@ export function DetailsStep({
   disabled,
   showNameField,
   contextMessage,
+  timezone,
 }: DetailsStepProps) {
   // Extract date portion (YYYY-MM-DD) from datetime strings for DateSlotPicker
   const minDate = minDateTime.split("T")[0];
@@ -54,6 +56,7 @@ export function DetailsStep({
         <DateSlotPicker
           value={preferredDateTime}
           onChange={onDateTimeChange}
+          timezone={timezone}
           minDate={minDate}
           maxDate={maxDate}
           disabled={disabled}

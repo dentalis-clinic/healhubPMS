@@ -53,6 +53,8 @@ export async function checkSlotConflict(
  * Create an appointment atomically with slot conflict checking.
  * Uses Serializable isolation to prevent race conditions.
  */
+const MAX_APT_RETRIES = 3;
+
 export async function createAppointmentAtomic(
   prisma: PrismaClient,
   opts: {
@@ -64,16 +66,29 @@ export async function createAppointmentAtomic(
 ) {
   const { clinicId, timezone, data, allowOverride = false } = opts;
 
-  return prisma.$transaction(
-    async (tx) => {
-      if (!allowOverride) {
-        await checkSlotConflict(tx, clinicId, data.preferredDateTime as Date);
-      }
-      const appointmentId = await generateAppointmentId(tx, clinicId, timezone);
-      return tx.appointment.create({ data: { ...data, clinicId, appointmentId } });
-    },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-  );
+  for (let attempt = 0; attempt < MAX_APT_RETRIES; attempt++) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          if (!allowOverride) {
+            await checkSlotConflict(tx, clinicId, data.preferredDateTime as Date);
+          }
+          const appointmentId = await generateAppointmentId(tx, clinicId, timezone, attempt);
+          return tx.appointment.create({ data: { ...data, clinicId, appointmentId } });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      );
+    } catch (error: unknown) {
+      const isUniqueViolation =
+        error instanceof Error &&
+        "code" in error &&
+        (error as { code: string }).code === "P2002";
+      if (isUniqueViolation && attempt < MAX_APT_RETRIES - 1) continue;
+      throw error;
+    }
+  }
+
+  throw new Error("Failed to generate unique appointment ID after max retries");
 }
 
 /**

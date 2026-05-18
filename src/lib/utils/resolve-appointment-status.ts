@@ -13,7 +13,6 @@
 
 import { DateTime } from "luxon";
 import { prisma } from "@/lib/prisma";
-import { BUSINESS_HOURS_CONFIG } from "@/lib/config/business-hours";
 
 const RESOLVE_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 let lastResolvedAt = 0;
@@ -24,10 +23,9 @@ export async function resolveAppointmentStatuses() {
     return { overdue: 0, completed: 0 };
   }
   lastResolvedAt = ts;
-  const now = DateTime.now().setZone(BUSINESS_HOURS_CONFIG.timezone);
-  const bufferCutoff = now
-    .minus({ minutes: BUSINESS_HOURS_CONFIG.slotDuration })
-    .toJSDate();
+  const now = DateTime.utc();
+  // 30-min buffer is a cross-clinic default; per-clinic slot duration is a future improvement
+  const bufferCutoff = now.minus({ minutes: 30 }).toJSDate();
 
   const [overdueResult, completedResult] = await Promise.all([
     // PENDING past appointment time → OVERDUE

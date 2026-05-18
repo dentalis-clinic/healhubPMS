@@ -2,7 +2,6 @@
 
 import { Alert, Button } from "@/components/ui";
 import { formatISTDateTime } from "@/lib/utils/date";
-import { CLINIC_CONFIG } from "@/lib/config/clinic";
 import type { MaskedPatient } from "@/types/patient";
 import type { PhoneCheckStatus } from "@/types/patient";
 
@@ -14,6 +13,7 @@ interface PatientSelectorProps {
   onSelectPatient: (patientId: string) => void;
   onSelectNewPatient: () => void;
   onSelectDifferentPerson: () => void;
+  clinicPhone?: string;
 }
 
 export function PatientSelector({
@@ -24,6 +24,7 @@ export function PatientSelector({
   onSelectPatient,
   onSelectNewPatient,
   onSelectDifferentPerson,
+  clinicPhone,
 }: PatientSelectorProps) {
   // Scenario D: single patient, all pending → blocked message
   if (patients.length === 1 && patients[0].hasPending) {
@@ -31,6 +32,7 @@ export function PatientSelector({
       <SinglePendingBlock
         patient={patients[0]}
         onDifferentPerson={onSelectDifferentPerson}
+        clinicPhone={clinicPhone}
       />
     );
   }
@@ -46,7 +48,7 @@ export function PatientSelector({
           {formatISTDateTime(new Date(blockedPatient.pendingDate))}
         </p>
         <p className="mt-2 text-xs">
-          To reschedule or cancel, contact us at {CLINIC_CONFIG.phones[0]}.
+          {clinicPhone && <>To reschedule or cancel, contact us at {clinicPhone}.</>}
         </p>
       </Alert>
     );
@@ -141,9 +143,11 @@ export function PatientSelector({
 function SinglePendingBlock({
   patient,
   onDifferentPerson,
+  clinicPhone,
 }: {
   patient: MaskedPatient;
   onDifferentPerson: () => void;
+  clinicPhone?: string;
 }) {
   return (
     <div className="space-y-3">
@@ -157,7 +161,7 @@ function SinglePendingBlock({
             : ""}
         </p>
         <p className="mt-2 text-xs">
-          To reschedule or cancel, please contact us at {CLINIC_CONFIG.phones[0]}.
+          {clinicPhone && <>To reschedule or cancel, please contact us at {clinicPhone}.</>}
         </p>
       </Alert>
       <Button

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import PrescriptionView from "@/components/PrescriptionView";
 import type { Medication } from "@/types/patient";
+import { getClinicForPage } from "@/lib/utils/get-clinic-for-page";
 
 export const dynamic = "force-dynamic";
 
@@ -14,15 +15,19 @@ export default async function PrescriptionPage({
 
   // Support lookup by UUID or prescriptionId (RX-...)
   const isRxId = id.startsWith("RX-");
-  const prescription = await prisma.prescription.findUnique({
-    where: isRxId ? { prescriptionId: id } : { id },
-    include: {
-      appointment: {
-        include: { patient: true },
+
+  const [prescription, clinic] = await Promise.all([
+    prisma.prescription.findUnique({
+      where: isRxId ? { prescriptionId: id } : { id },
+      include: {
+        appointment: {
+          include: { patient: true },
+        },
+        prescribedBy: { select: { id: true, name: true, email: true } },
       },
-      prescribedBy: { select: { id: true, name: true, email: true } },
-    },
-  });
+    }),
+    getClinicForPage(),
+  ]);
 
   if (!prescription) {
     notFound();
@@ -52,5 +57,5 @@ export default async function PrescriptionPage({
     },
   };
 
-  return <PrescriptionView prescription={serialized} />;
+  return <PrescriptionView prescription={serialized} clinic={clinic} />;
 }

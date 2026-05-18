@@ -85,6 +85,13 @@ export default function LoginForm() {
             Sign in
           </Button>
         </form>
+
+        <p className="text-center text-xs text-text-tertiary">
+          New clinic?{" "}
+          <a href="/register" className="text-text-link hover:underline">
+            Register here
+          </a>
+        </p>
       </div>
     </div>
   );

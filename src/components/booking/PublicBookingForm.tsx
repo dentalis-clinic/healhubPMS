@@ -8,7 +8,12 @@ import { PatientSelector } from "./PatientSelector";
 import { DetailsStep } from "./DetailsStep";
 import { SuccessStep } from "./SuccessStep";
 
-export default function PublicBookingForm() {
+interface PublicBookingFormProps {
+  timezone?: string;
+  clinicPhone?: string;
+}
+
+export default function PublicBookingForm({ timezone, clinicPhone }: PublicBookingFormProps) {
   const flow = useBookingFlow();
 
   // Success screen replaces the form
@@ -18,6 +23,7 @@ export default function PublicBookingForm() {
         patientId={flow.submitState.patientId}
         preferredDateTime={flow.submitState.preferredDateTime}
         onReset={flow.handleReset}
+        clinicPhone={clinicPhone}
       />
     );
   }
@@ -70,6 +76,7 @@ export default function PublicBookingForm() {
           onSelectPatient={flow.selectPatient}
           onSelectNewPatient={flow.selectNewPatient}
           onSelectDifferentPerson={flow.selectDifferentPerson}
+          clinicPhone={clinicPhone}
         />
       )}
 
@@ -86,6 +93,7 @@ export default function PublicBookingForm() {
             disabled={isSubmitting}
             showNameField={flow.showNameField}
             contextMessage={flow.contextMessage}
+            timezone={timezone}
           />
 
           <Button

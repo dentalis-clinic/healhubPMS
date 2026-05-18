@@ -25,21 +25,33 @@ export async function middleware(request: NextRequest) {
   const host = request.headers.get("host") ?? "";
   const isLocalhost = host.startsWith("localhost") || host.startsWith("127.0.0.1");
 
-  // Production: extract subdomain. Local dev: use DEFAULT_CLINIC_SLUG if set.
+  // Production: only treat host as a clinic subdomain when it matches <slug>.<appDomain>.
+  // The root app domain itself must never resolve to a clinic — those requests go to /register.
+  const appDomain = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "healthhub.app";
+
   const clinicSlug = isLocalhost
     ? (process.env.DEFAULT_CLINIC_SLUG ?? "")
-    : host.split(".")[0];
+    : (() => {
+        const bare = host.split(":")[0]; // strip port if present
+        if (bare === appDomain || bare === `www.${appDomain}`) return "";
+        if (bare.endsWith(`.${appDomain}`)) {
+          return bare.slice(0, bare.length - appDomain.length - 1);
+        }
+        // Unrecognised host (Vercel preview URLs, etc.) — treat as root domain.
+        return "";
+      })();
 
   if (!skipClinicResolution && clinicSlug) try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const res = await fetch(
       `${supabaseUrl}/rest/v1/clinics?slug=eq.${encodeURIComponent(clinicSlug)}&select=id,shortName,timezone,isActive&limit=1`,
       {
         headers: {
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${supabaseAnonKey}`,
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
         },
       }
     );

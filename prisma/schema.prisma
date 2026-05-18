@@ -76,8 +76,10 @@ model Clinic {
   phones    String[]
   email     String?
   website   String?
-  logo      String?  // path or URL
-  isActive  Boolean  @default(true)
+  logo          String?  // path or URL
+  businessHours Json?    // [{ start: "HH:mm", end: "HH:mm" }]
+  slotDuration  Int?     // minutes per slot (null = 30)
+  isActive      Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -119,7 +121,7 @@ model Patient {
 model Appointment {
   id                String            @id @default(uuid())
   clinicId          String
-  appointmentId     String            @unique // APT-YYYYMMDD-XXXX (generated once, permanent)
+  appointmentId     String            // APT-YYYYMMDD-XXXX (generated once, permanent; unique per clinic)
   patientId         String
 
   // NEW: Separate channel and visit type (replaces conflated `type`)
@@ -148,6 +150,7 @@ model Appointment {
   prescription Prescription?
   payments     Payment[]
 
+  @@unique([clinicId, appointmentId])
   @@index([clinicId])
   @@index([appointmentId])
   @@index([patientId])

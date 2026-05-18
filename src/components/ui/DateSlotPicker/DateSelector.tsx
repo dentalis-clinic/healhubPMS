@@ -8,9 +8,9 @@
 import React, { useMemo } from "react";
 import { DateTime } from "luxon";
 import { DateSelectorProps } from "./types";
-import { BUSINESS_HOURS_CONFIG } from "@/lib/config/business-hours";
 
 export const DateSelector: React.FC<DateSelectorProps> = ({
+  timezone,
   minDate,
   maxDate,
   selectedDate,
@@ -21,7 +21,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
   const availableDates = useMemo(() => {
     const dates: Array<{ value: string; label: string }> = [];
 
-    const today = DateTime.now().setZone(BUSINESS_HOURS_CONFIG.timezone);
+    const today = DateTime.now().setZone(timezone);
 
     // Format date label for display
     const formatDateLabel = (date: DateTime, today: DateTime): string => {
@@ -42,10 +42,10 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
 
     // Determine date range
     const min = minDate
-      ? DateTime.fromISO(minDate, { zone: BUSINESS_HOURS_CONFIG.timezone })
+      ? DateTime.fromISO(minDate, { zone: timezone })
       : today;
     const max = maxDate
-      ? DateTime.fromISO(maxDate, { zone: BUSINESS_HOURS_CONFIG.timezone })
+      ? DateTime.fromISO(maxDate, { zone: timezone })
       : today.plus({ days: 2 }); // Default: show today + next 2 days
 
     let current = min;
@@ -59,7 +59,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     }
 
     return dates;
-  }, [minDate, maxDate]);
+  }, [minDate, maxDate, timezone]);
 
   // Button style classes
   const getButtonClasses = (isSelected: boolean): string => {

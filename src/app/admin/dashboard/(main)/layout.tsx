@@ -13,14 +13,14 @@ export default async function MainLayout({
 }) {
   const supabase = await createClient();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (!session?.user) {
+  if (!user) {
     redirect("/admin/login");
   }
 
-  const admin = await prisma.admin.findUnique({ where: { id: session.user.id } });
+  const admin = await prisma.admin.findUnique({ where: { id: user.id } });
   if (!admin) {
     redirect("/admin/login");
   }

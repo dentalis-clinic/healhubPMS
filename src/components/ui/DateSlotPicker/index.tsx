@@ -10,11 +10,12 @@ import { DateTime } from "luxon";
 import { DateSelector } from "./DateSelector";
 import { SlotGrid } from "./SlotGrid";
 import { DateSlotPickerProps, TimeSlot } from "./types";
-import { BUSINESS_HOURS_CONFIG } from "@/lib/config/business-hours";
+const DEFAULT_TIMEZONE = "Asia/Kolkata";
 
 export const DateSlotPicker: React.FC<DateSlotPickerProps> = ({
   value,
   onChange,
+  timezone = DEFAULT_TIMEZONE,
   minDate,
   maxDate,
   disabled = false,
@@ -27,9 +28,7 @@ export const DateSlotPicker: React.FC<DateSlotPickerProps> = ({
     if (!value) return null;
 
     try {
-      const datetime = DateTime.fromISO(value, {
-        zone: BUSINESS_HOURS_CONFIG.timezone,
-      });
+      const datetime = DateTime.fromISO(value, { zone: timezone });
       if (!datetime.isValid) return null;
 
       return {
@@ -39,14 +38,14 @@ export const DateSlotPicker: React.FC<DateSlotPickerProps> = ({
     } catch {
       return null;
     }
-  }, [value]);
+  }, [value, timezone]);
 
   // State for selected date and time
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     if (parsedValue?.date) return parsedValue.date;
 
     // Default to today if no value
-    const today = DateTime.now().setZone(BUSINESS_HOURS_CONFIG.timezone);
+    const today = DateTime.now().setZone(timezone);
     const todayStr = today.toFormat("yyyy-MM-dd");
 
     // Check if today is within min/max range
@@ -95,6 +94,7 @@ export const DateSlotPicker: React.FC<DateSlotPickerProps> = ({
     <div className="space-y-6">
       {/* Date selector */}
       <DateSelector
+        timezone={timezone}
         minDate={minDate}
         maxDate={maxDate}
         selectedDate={selectedDate}

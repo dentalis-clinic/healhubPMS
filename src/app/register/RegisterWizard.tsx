@@ -573,9 +573,9 @@ function SuccessScreen({ slug }: { slug: string }) {
     typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
-  const dashboardUrl = isLocalhost
-    ? `http://localhost:3000/admin/dashboard`
-    : `https://${slug}.${APP_DOMAIN}/admin/dashboard`;
+  const loginUrl = isLocalhost
+    ? `http://localhost:3000/admin/login`
+    : `https://${slug}.${APP_DOMAIN}/admin/login`;
 
   return (
     <div className="text-center space-y-6">
@@ -593,14 +593,14 @@ function SuccessScreen({ slug }: { slug: string }) {
         </p>
       </div>
       <div className="rounded-lg border border-border-primary bg-surface-secondary p-4 text-left">
-        <p className="text-xs text-text-hint mb-1">Dashboard URL</p>
-        <p className="text-sm font-mono text-text-brand break-all">{dashboardUrl}</p>
+        <p className="text-xs text-text-hint mb-1">Your login URL</p>
+        <p className="text-sm font-mono text-text-brand break-all">{loginUrl}</p>
       </div>
       <a
-        href={dashboardUrl}
+        href={loginUrl}
         className="inline-flex items-center justify-center gap-2 rounded-md bg-interactive-primary px-6 py-2.5 text-sm font-medium text-text-inverse hover:bg-interactive-primary-hover transition-colors"
       >
-        Go to dashboard
+        Login to continue
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
         </svg>

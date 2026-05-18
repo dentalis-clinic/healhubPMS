@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CLINIC_CONFIG } from "@/lib/config/clinic";
+import type { ClinicInfo } from "@/lib/utils/get-clinic-for-page";
 import { formatISTDate } from "@/lib/utils/date";
 import { Button } from "@/components/ui";
 import jsPDF from "jspdf";
@@ -27,14 +27,16 @@ interface BlankPrescriptionTemplateProps {
       registrationNumber: string | null;
     } | null;
   };
+  clinic: ClinicInfo | null;
 }
 
 
 export default function BlankPrescriptionTemplate({
   appointment,
+  clinic,
 }: BlankPrescriptionTemplateProps) {
   const { patient } = appointment;
-  const addr = CLINIC_CONFIG.address;
+  const addr = clinic?.address ?? null;
   const currentDate = formatISTDate(new Date());
   const prescriptionRef = useRef<HTMLDivElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -138,38 +140,35 @@ export default function BlankPrescriptionTemplate({
             transform: 'rotate(-45deg)',
             transformOrigin: 'center',
           }}>
-            Dentalis Dental Care By Jamians
+            {clinic?.name ?? ""}
           </div>
         </div>
         {/* Header */}
         <div className="relative z-10 mb-4 border-b-2 border-accent-600 pb-2 print-avoid-break">
           <div className="flex items-start justify-between mb-4">
             <div className="flex flex-col items-start">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={CLINIC_CONFIG.logo}
-                alt="Clinic logo"
-                className="h-20 w-40 rounded object-contain"
-              />
+              {clinic?.logo && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={clinic.logo}
+                  alt="Clinic logo"
+                  className="h-20 w-40 rounded object-contain"
+                />
+              )}
             </div>
-            <div className="text-right pt-2">
-              <p className="text-sm font-semibold text-brand-800 mb-2 whitespace-pre-line">
-                {CLINIC_CONFIG.timing}
-              </p>
-              <p className="text-sm text-gray-800">
-                {addr.line1}
-              </p>
-              <p className="text-sm text-gray-800">
-                {addr.line2}
-              </p>
-              <p className="text-sm text-gray-800">
-                {addr.city}, {addr.state} - {addr.pincode}
-              </p>
-            </div>
+            {addr && (
+              <div className="text-right pt-2">
+                <p className="text-sm text-gray-800">{addr.line1}</p>
+                {addr.line2 && <p className="text-sm text-gray-800">{addr.line2}</p>}
+                <p className="text-sm text-gray-800">
+                  {addr.city}, {addr.state} - {addr.pincode}
+                </p>
+              </div>
+            )}
           </div>
           <div className="w-full text-left">
             <h1 className="text-lg font-bold text-accent-600 whitespace-nowrap">
-              {CLINIC_CONFIG.name}
+              {clinic?.name ?? ""}
             </h1>
           </div>
         </div>
@@ -283,12 +282,16 @@ export default function BlankPrescriptionTemplate({
 
           {/* Footer */}
           <div className="border-t-2 border-accent-600 pt-3 text-center">
-            <p className="text-xs pb-2 text-brand-800 font-bold">
-              {CLINIC_CONFIG.phones.join(" | ")}
-            </p>
-            <p className="text-xs text-gray-700">
-              {CLINIC_CONFIG.email} | {CLINIC_CONFIG.website}
-            </p>
+            {clinic?.phones && clinic.phones.length > 0 && (
+              <p className="text-xs pb-2 text-brand-800 font-bold">
+                {clinic.phones.join(" | ")}
+              </p>
+            )}
+            {(clinic?.email || clinic?.website) && (
+              <p className="text-xs text-gray-700">
+                {[clinic.email, clinic.website].filter(Boolean).join(" | ")}
+              </p>
+            )}
           </div>
         </div>
       </div>

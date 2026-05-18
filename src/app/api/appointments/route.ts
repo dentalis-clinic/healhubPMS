@@ -3,9 +3,10 @@ import { z } from "zod/v4";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import {
-  publicBookingSchema,
-  walkInSchema,
+  createPublicBookingSchema,
+  createWalkInSchema,
 } from "@/lib/validations/appointment";
+import { buildClinicSchedule } from "@/lib/utils/clinic-schedule";
 import { normalizePhoneNumber } from "@/lib/utils/phone";
 import { findOrCreatePatient } from "@/lib/utils/patient-id";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
@@ -24,7 +25,15 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const supabase = await createClient();
+    const [clinicRow, supabase] = await Promise.all([
+      prisma.clinic.findUnique({
+        where: { id: clinic.clinicId },
+        select: { timezone: true, businessHours: true, slotDuration: true },
+      }),
+      createClient(),
+    ]);
+    const scheduleConfig = buildClinicSchedule(clinicRow ?? { timezone: clinic.timezone, businessHours: null, slotDuration: null });
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -55,7 +64,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const schema = isAdminSubmission ? walkInSchema : publicBookingSchema;
+    const schema = isAdminSubmission ? createWalkInSchema(scheduleConfig) : createPublicBookingSchema(scheduleConfig);
     const parsed = schema.safeParse(body);
 
     if (!parsed.success) {

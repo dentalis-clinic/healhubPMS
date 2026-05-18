@@ -1,6 +1,6 @@
 "use client";
 
-import { CLINIC_CONFIG } from "@/lib/config/clinic";
+import type { ClinicInfo } from "@/lib/utils/get-clinic-for-page";
 import { formatISTDate } from "@/lib/utils/date";
 import type { Medication } from "@/types/patient";
 
@@ -26,13 +26,14 @@ interface PrescriptionViewProps {
       };
     };
   };
+  clinic: ClinicInfo | null;
 }
 
 
-export default function PrescriptionView({ prescription }: PrescriptionViewProps) {
+export default function PrescriptionView({ prescription, clinic }: PrescriptionViewProps) {
   const { appointment } = prescription;
   const { patient } = appointment;
-  const addr = CLINIC_CONFIG.address;
+  const addr = clinic?.address ?? null;
 
   return (
     <div>
@@ -61,7 +62,7 @@ export default function PrescriptionView({ prescription }: PrescriptionViewProps
             transform: 'rotate(-45deg)',
             transformOrigin: 'center',
           }}>
-            Dentalis Dental Care By Jamians
+            {clinic?.name ?? ""}
           </div>
         </div>
 
@@ -69,37 +70,42 @@ export default function PrescriptionView({ prescription }: PrescriptionViewProps
         <div className="relative z-10 border-b-2 border-accent-700 pb-4 mb-6">
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={CLINIC_CONFIG.logo}
-                alt="Clinic logo"
-                className="h-20 w-20 rounded object-contain"
-              />
+              {clinic?.logo && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={clinic.logo}
+                  alt="Clinic logo"
+                  className="h-20 w-20 rounded object-contain"
+                />
+              )}
               <div className="pt-2">
                 <h1 className="text-xl font-bold text-accent-700">
-                  {CLINIC_CONFIG.name}
+                  {clinic?.name ?? ""}
                 </h1>
-                <p className="text-sm font-semibold text-accent-700 mb-2 whitespace-pre-line">
-                  {CLINIC_CONFIG.timing}
-                </p>
-                <p className="text-sm text-gray-600">
-                  {addr.line1}, {addr.line2}
-                </p>
-                <p className="text-sm text-gray-600">
-                  {addr.city}, {addr.state} - {addr.pincode}
-                </p>
+                {addr && (
+                  <>
+                    <p className="text-sm text-gray-600">
+                      {addr.line1}{addr.line2 ? `, ${addr.line2}` : ""}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {addr.city}, {addr.state} - {addr.pincode}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
             <div className="text-right">
-              <p className="mt-1 text-xs text-gray-600">
-                {CLINIC_CONFIG.phones.join(" | ")}
-              </p>
-              <p className="text-xs text-gray-600">
-                {CLINIC_CONFIG.email}
-              </p>
-              <p className="text-xs text-gray-600">
-                {CLINIC_CONFIG.website}
-              </p>
+              {clinic?.phones && clinic.phones.length > 0 && (
+                <p className="mt-1 text-xs text-gray-600">
+                  {clinic.phones.join(" | ")}
+                </p>
+              )}
+              {clinic?.email && (
+                <p className="text-xs text-gray-600">{clinic.email}</p>
+              )}
+              {clinic?.website && (
+                <p className="text-xs text-gray-600">{clinic.website}</p>
+              )}
             </div>
           </div>
         </div>
@@ -214,12 +220,16 @@ export default function PrescriptionView({ prescription }: PrescriptionViewProps
 
         {/* Footer */}
         <div className="relative z-10 mt-8 border-t-2 border-accent-700 pt-3 text-center">
-          <p className="text-xs text-accent-700 font-bold">
-            {CLINIC_CONFIG.phones.join(" | ")}
-          </p>
-          <p className="text-xs text-gray-700">
-            {CLINIC_CONFIG.email} | {CLINIC_CONFIG.website}
-          </p>
+          {clinic?.phones && clinic.phones.length > 0 && (
+            <p className="text-xs text-accent-700 font-bold">
+              {clinic.phones.join(" | ")}
+            </p>
+          )}
+          {(clinic?.email || clinic?.website) && (
+            <p className="text-xs text-gray-700">
+              {[clinic.email, clinic.website].filter(Boolean).join(" | ")}
+            </p>
+          )}
         </div>
       </div>
     </div>

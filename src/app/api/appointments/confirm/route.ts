@@ -10,6 +10,8 @@ import { checkSlotConflict, SlotConflictError } from "@/lib/utils/slot-conflict"
 import { validateOrigin } from "@/lib/utils/csrf";
 import type { Sex } from "@/generated/prisma/client";
 
+const MAX_APT_RETRIES = 3;
+
 const VALID_TRANSITIONS: Record<string, string[]> = {
   PENDING: ["CONFIRMED", "CANCELLED"],
   OVERDUE: ["CONFIRMED", "CANCELLED"],
@@ -150,32 +152,43 @@ export async function POST(request: NextRequest) {
 
       const appointmentType = data.visitType === "FOLLOW_UP" ? "FOLLOW_UP" : "WALK_IN";
 
-      const appointment = await prisma.$transaction(
-        async (tx) => {
-          if (!allowOverride) {
-            await checkSlotConflict(tx, clinic.id, data.preferredDateTime);
-          }
-          const appointmentId = await generateAppointmentId(tx, clinic.id, clinic.timezone);
-          return tx.appointment.create({
-            data: {
-              clinicId: clinic.id,
-              appointmentId,
-              patientId: patient.id,
-              type: appointmentType,
-              bookingChannel: data.isPhoneBooking ? "PHONE" : "WALK_IN",
-              visitType: data.visitType === "FOLLOW_UP" ? "FOLLOW_UP" : "NEW_CONSULTATION",
-              status: "CONFIRMED",
-              preferredDateTime: data.preferredDateTime,
-              reasonForVisit: data.reasonForVisit || null,
-              submittedBy: "ADMIN",
-              adminUserId: admin.id,
-              doctorId: data.doctorId,
-              totalAmount: data.totalAmount != null ? data.totalAmount : null,
+      let appointment!: Awaited<ReturnType<typeof prisma.appointment.create>>;
+      for (let attempt = 0; attempt < MAX_APT_RETRIES; attempt++) {
+        try {
+          appointment = await prisma.$transaction(
+            async (tx) => {
+              if (!allowOverride) {
+                await checkSlotConflict(tx, clinic.id, data.preferredDateTime);
+              }
+              const appointmentId = await generateAppointmentId(tx, clinic.id, clinic.timezone, attempt);
+              return tx.appointment.create({
+                data: {
+                  clinicId: clinic.id,
+                  appointmentId,
+                  patientId: patient.id,
+                  type: appointmentType,
+                  bookingChannel: data.isPhoneBooking ? "PHONE" : "WALK_IN",
+                  visitType: data.visitType === "FOLLOW_UP" ? "FOLLOW_UP" : "NEW_CONSULTATION",
+                  status: "CONFIRMED",
+                  preferredDateTime: data.preferredDateTime,
+                  reasonForVisit: data.reasonForVisit || null,
+                  submittedBy: "ADMIN",
+                  adminUserId: admin.id,
+                  doctorId: data.doctorId,
+                  totalAmount: data.totalAmount != null ? data.totalAmount : null,
+                },
+              });
             },
-          });
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-      );
+            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+          );
+          break;
+        } catch (err: unknown) {
+          const isUniqueViolation =
+            err instanceof Error && "code" in err && (err as { code: string }).code === "P2002";
+          if (isUniqueViolation && attempt < MAX_APT_RETRIES - 1) continue;
+          throw err;
+        }
+      }
 
       return NextResponse.json(
         {
@@ -202,32 +215,43 @@ export async function POST(request: NextRequest) {
       { id: clinic.id, shortName: clinic.shortName, timezone: clinic.timezone }
     );
 
-    const appointment = await prisma.$transaction(
-      async (tx) => {
-        if (!allowOverride) {
-          await checkSlotConflict(tx, clinic.id, data.preferredDateTime);
-        }
-        const appointmentId = await generateAppointmentId(tx, clinic.id, clinic.timezone);
-        return tx.appointment.create({
-          data: {
-            clinicId: clinic.id,
-            appointmentId,
-            patientId: patient.id,
-            type: "WALK_IN",
-            bookingChannel: data.isPhoneBooking ? "PHONE" : "WALK_IN",
-            visitType: "NEW_CONSULTATION",
-            status: "CONFIRMED",
-            preferredDateTime: data.preferredDateTime,
-            reasonForVisit: data.reasonForVisit || null,
-            submittedBy: "ADMIN",
-            adminUserId: admin.id,
-            doctorId: data.doctorId,
-            totalAmount: data.totalAmount != null ? data.totalAmount : null,
+    let appointment!: Awaited<ReturnType<typeof prisma.appointment.create>>;
+    for (let attempt = 0; attempt < MAX_APT_RETRIES; attempt++) {
+      try {
+        appointment = await prisma.$transaction(
+          async (tx) => {
+            if (!allowOverride) {
+              await checkSlotConflict(tx, clinic.id, data.preferredDateTime);
+            }
+            const appointmentId = await generateAppointmentId(tx, clinic.id, clinic.timezone, attempt);
+            return tx.appointment.create({
+              data: {
+                clinicId: clinic.id,
+                appointmentId,
+                patientId: patient.id,
+                type: "WALK_IN",
+                bookingChannel: data.isPhoneBooking ? "PHONE" : "WALK_IN",
+                visitType: "NEW_CONSULTATION",
+                status: "CONFIRMED",
+                preferredDateTime: data.preferredDateTime,
+                reasonForVisit: data.reasonForVisit || null,
+                submittedBy: "ADMIN",
+                adminUserId: admin.id,
+                doctorId: data.doctorId,
+                totalAmount: data.totalAmount != null ? data.totalAmount : null,
+              },
+            });
           },
-        });
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-    );
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        );
+        break;
+      } catch (err: unknown) {
+        const isUniqueViolation =
+          err instanceof Error && "code" in err && (err as { code: string }).code === "P2002";
+        if (isUniqueViolation && attempt < MAX_APT_RETRIES - 1) continue;
+        throw err;
+      }
+    }
 
     return NextResponse.json(
       {

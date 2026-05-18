@@ -6,6 +6,7 @@ import { useDashboard } from "./DashboardContext";
 import type { DoctorRow } from "@/types/patient";
 import SelectPatientModal from "./SelectPatientModal";
 import TemplateFormModal from "./TemplateFormModal";
+import ClinicSettingsTab from "./ClinicSettingsTab";
 
 type TemplateType = "DOCUMENT" | "SURVEY";
 
@@ -28,7 +29,7 @@ interface AdminRow {
   createdAt: string;
 }
 
-type ActiveTab = "doctors" | "admins" | "printables";
+type ActiveTab = "clinic" | "doctors" | "admins" | "printables";
 
 // --- Add Doctor Modal ---
 function AddDoctorModal({
@@ -436,7 +437,7 @@ function EditDoctorModal({
 // --- Main Settings View ---
 export default function SettingsView() {
   const { adminId: currentAdminId } = useDashboard();
-  const [activeTab, setActiveTab] = useState<ActiveTab>("doctors");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("clinic");
 
   // Modal open state
   const [showAddDoctor, setShowAddDoctor] = useState(false);
@@ -611,6 +612,7 @@ export default function SettingsView() {
         <div className="inline-flex rounded-md border border-border-primary bg-surface-secondary p-0.5">
           {(
             [
+              { value: "clinic", label: "Clinic" },
               { value: "doctors", label: "Doctors" },
               { value: "admins", label: "Admins" },
               { value: "printables", label: "Printables" },
@@ -645,7 +647,11 @@ export default function SettingsView() {
             New Document
           </Button>
         )}
+        {/* Clinic tab has no top-level action — save buttons are per-section */}
       </div>
+
+      {/* Clinic tab */}
+      {activeTab === "clinic" && <ClinicSettingsTab />}
 
       {/* Doctors tab */}
       {activeTab === "doctors" && (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CLINIC_CONFIG } from "@/lib/config/clinic";
+import type { ClinicInfo } from "@/lib/utils/get-clinic-for-page";
 import { Button } from "@/components/ui";
 import jsPDF from "jspdf";
 import { toPng } from "html-to-image";
@@ -29,8 +29,8 @@ function BlankField({ label, value }: { label: string; value?: string | null }) 
   );
 }
 
-export default function BlankLetterheadTemplate({ patient }: { patient?: PatientInfo }) {
-  const addr = CLINIC_CONFIG.address;
+export default function BlankLetterheadTemplate({ patient, clinic }: { patient?: PatientInfo; clinic: ClinicInfo | null }) {
+  const addr = clinic?.address ?? null;
   const today = DateTime.now().setZone("Asia/Kolkata").toFormat("dd MMM yyyy");
   const prescriptionRef = useRef<HTMLDivElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -113,7 +113,7 @@ export default function BlankLetterheadTemplate({ patient }: { patient?: Patient
             className="select-none whitespace-nowrap text-[4rem] font-bold text-brand-100 opacity-30"
             style={{ transform: "rotate(-45deg)", transformOrigin: "center" }}
           >
-            Dentalis Dental Care By Jamians
+            {clinic?.name ?? ""}
           </div>
         </div>
 
@@ -121,25 +121,26 @@ export default function BlankLetterheadTemplate({ patient }: { patient?: Patient
         <div className="relative z-10 mb-4 border-b-2 border-accent-600 pb-2">
           <div className="mb-4 flex items-start justify-between">
             <div className="flex flex-col items-start">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={CLINIC_CONFIG.logo}
-                alt="Clinic logo"
-                className="h-20 w-40 rounded object-contain"
-              />
+              {clinic?.logo && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={clinic.logo}
+                  alt="Clinic logo"
+                  className="h-20 w-40 rounded object-contain"
+                />
+              )}
             </div>
-            <div className="pt-2 text-right">
-              <p className="mb-2 whitespace-pre-line text-sm font-semibold text-brand-800">
-                {CLINIC_CONFIG.timing}
-              </p>
-              <p className="text-sm text-gray-800">{addr.line1}</p>
-              <p className="text-sm text-gray-800">{addr.line2}</p>
-              <p className="text-sm text-gray-800">
-                {addr.city}, {addr.state} - {addr.pincode}
-              </p>
-            </div>
+            {addr && (
+              <div className="pt-2 text-right">
+                <p className="text-sm text-gray-800">{addr.line1}</p>
+                {addr.line2 && <p className="text-sm text-gray-800">{addr.line2}</p>}
+                <p className="text-sm text-gray-800">
+                  {addr.city}, {addr.state} - {addr.pincode}
+                </p>
+              </div>
+            )}
           </div>
-          <h1 className="text-lg font-bold text-accent-600">{CLINIC_CONFIG.name}</h1>
+          <h1 className="text-lg font-bold text-accent-600">{clinic?.name ?? ""}</h1>
         </div>
 
         {/* Patient info */}
@@ -199,12 +200,16 @@ export default function BlankLetterheadTemplate({ patient }: { patient?: Patient
           </div>
 
           <div className="border-t-2 border-accent-600 pt-3 text-center">
-            <p className="pb-2 text-xs font-bold text-brand-800">
-              {CLINIC_CONFIG.phones.join(" | ")}
-            </p>
-            <p className="text-xs text-gray-700">
-              {CLINIC_CONFIG.email} | {CLINIC_CONFIG.website}
-            </p>
+            {clinic?.phones && clinic.phones.length > 0 && (
+              <p className="pb-2 text-xs font-bold text-brand-800">
+                {clinic.phones.join(" | ")}
+              </p>
+            )}
+            {(clinic?.email || clinic?.website) && (
+              <p className="text-xs text-gray-700">
+                {[clinic.email, clinic.website].filter(Boolean).join(" | ")}
+              </p>
+            )}
           </div>
         </div>
       </div>

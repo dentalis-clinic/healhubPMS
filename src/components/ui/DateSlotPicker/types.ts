@@ -17,6 +17,7 @@ export interface SlotAvailability {
 export interface DateSlotPickerProps {
   value: string; // ISO datetime string (current selected value)
   onChange: (value: string) => void; // Callback when slot is selected
+  timezone?: string; // IANA timezone (defaults to "Asia/Kolkata")
   minDate?: string; // YYYY-MM-DD (optional, for public 72hr limit)
   maxDate?: string; // YYYY-MM-DD (optional)
   disabled?: boolean; // Disable all interactions
@@ -26,6 +27,7 @@ export interface DateSlotPickerProps {
 }
 
 export interface DateSelectorProps {
+  timezone: string; // IANA timezone
   minDate?: string; // YYYY-MM-DD
   maxDate?: string; // YYYY-MM-DD
   selectedDate: string; // YYYY-MM-DD

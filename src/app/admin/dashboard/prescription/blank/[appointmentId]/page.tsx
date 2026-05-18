@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import BlankPrescriptionTemplate from "@/components/BlankPrescriptionTemplate";
+import { getClinicForPage } from "@/lib/utils/get-clinic-for-page";
 
 interface PageProps {
   params: Promise<{ appointmentId: string }>;
@@ -9,11 +10,13 @@ interface PageProps {
 export default async function BlankPrescriptionPage({ params }: PageProps) {
   const { appointmentId } = await params;
 
-  // Fetch appointment with patient data
-  const appointment = await prisma.appointment.findUnique({
-    where: { id: appointmentId },
-    include: { patient: true, doctor: true },
-  });
+  const [appointment, clinic] = await Promise.all([
+    prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: { patient: true, doctor: true },
+    }),
+    getClinicForPage(),
+  ]);
 
   if (!appointment) {
     notFound();
@@ -42,5 +45,5 @@ export default async function BlankPrescriptionPage({ params }: PageProps) {
       : null,
   };
 
-  return <BlankPrescriptionTemplate appointment={serialized} />;
+  return <BlankPrescriptionTemplate appointment={serialized} clinic={clinic} />;
 }

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
-import { followUpSchema } from "@/lib/validations/appointment";
+import { createFollowUpSchema } from "@/lib/validations/appointment";
+import { buildClinicSchedule } from "@/lib/utils/clinic-schedule";
 import { createAppointmentAtomic, SlotConflictError } from "@/lib/utils/slot-conflict";
 import { validateOrigin } from "@/lib/utils/csrf";
 
@@ -16,7 +17,12 @@ export async function POST(request: NextRequest) {
     const { user, clinic } = auth;
 
     const body = await request.json();
-    const parsed = followUpSchema.safeParse(body);
+    const clinicRow = await prisma.clinic.findUnique({
+      where: { id: clinic.id },
+      select: { timezone: true, businessHours: true, slotDuration: true },
+    });
+    const scheduleConfig = buildClinicSchedule(clinicRow ?? { timezone: clinic.timezone, businessHours: null, slotDuration: null });
+    const parsed = createFollowUpSchema(scheduleConfig).safeParse(body);
 
     if (!parsed.success) {
       const errors = z.prettifyError(parsed.error);

@@ -10,7 +10,7 @@ import { DateTime } from "luxon";
 import { prisma } from "@/lib/prisma";
 import { AppointmentStatus } from "@/generated/prisma/client";
 import { generateSlotsForDate } from "@/lib/utils/time-slots";
-import { BUSINESS_HOURS_CONFIG } from "@/lib/config/business-hours";
+import { buildClinicSchedule } from "@/lib/utils/clinic-schedule";
 import { createClient } from "@/lib/supabase/server";
 import { getClinicContext } from "@/lib/utils/clinic-context";
 
@@ -33,7 +33,16 @@ export async function GET(request: NextRequest) {
     const { clinic, error } = getClinicContext(request);
     if (error) return error;
 
-    const supabase = await createClient();
+    const [clinicRow, supabase] = await Promise.all([
+      prisma.clinic.findUnique({
+        where: { id: clinic.clinicId },
+        select: { timezone: true, businessHours: true, slotDuration: true },
+      }),
+      createClient(),
+    ]);
+
+    const scheduleConfig = buildClinicSchedule(clinicRow ?? { timezone: clinic.timezone, businessHours: null, slotDuration: null });
+
     const { data: { user } } = await supabase.auth.getUser();
     const isAdmin = user
       ? !!(await prisma.admin.findUnique({ where: { id: user.id, clinicId: clinic.clinicId } }))
@@ -50,7 +59,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const date = DateTime.fromISO(dateParam, { zone: BUSINESS_HOURS_CONFIG.timezone });
+    const date = DateTime.fromISO(dateParam, { zone: scheduleConfig.timezone });
 
     if (!date.isValid) {
       return NextResponse.json(
@@ -59,7 +68,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const slots = generateSlotsForDate(date);
+    const slots = generateSlotsForDate(date, scheduleConfig);
     const startOfDay = date.startOf("day").toJSDate();
     const endOfDay = date.endOf("day").toJSDate();
 
@@ -86,7 +95,7 @@ export async function GET(request: NextRequest) {
     const slotCountMap = new Map<string, number>();
     for (const appointment of appointments) {
       const appointmentTime = DateTime.fromJSDate(appointment.preferredDateTime, {
-        zone: BUSINESS_HOURS_CONFIG.timezone,
+        zone: scheduleConfig.timezone,
       }).toFormat("HH:mm");
       slotCountMap.set(appointmentTime, (slotCountMap.get(appointmentTime) || 0) + 1);
     }

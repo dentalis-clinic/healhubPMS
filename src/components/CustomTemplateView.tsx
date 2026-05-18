@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import { CLINIC_CONFIG } from "@/lib/config/clinic";
+import type { ClinicInfo } from "@/lib/utils/get-clinic-for-page";
 import { Button } from "@/components/ui";
 import jsPDF from "jspdf";
 import { toPng } from "html-to-image";
@@ -11,6 +11,7 @@ import type { PatientInfo } from "@/components/BlankLetterheadTemplate";
 interface CustomTemplateViewProps {
   template: { title: string; showPatientDetails: boolean; content: string };
   patient?: PatientInfo;
+  clinic: ClinicInfo | null;
 }
 
 // CSS pixels per mm at 96 DPI (fixed in CSS spec)
@@ -19,37 +20,46 @@ const A4_H_PX = 297 * MM_TO_PX;
 // p-8 = 2rem = 32px, applied top+bottom
 const PAGE_PADDING_Y = 64;
 
-function ClinicHeader({ addr }: { addr: typeof CLINIC_CONFIG.address }) {
+function ClinicHeader({ clinic }: { clinic: ClinicInfo | null }) {
+  const addr = clinic?.address ?? null;
   return (
     <div className="mb-4 border-b-2 border-accent-600 pb-2">
       <div className="mb-4 flex items-start justify-between">
         <div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={CLINIC_CONFIG.logo} alt="Clinic logo" className="h-20 w-40 rounded object-contain" />
+          {clinic?.logo && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={clinic.logo} alt="Clinic logo" className="h-20 w-40 rounded object-contain" />
+          )}
         </div>
-        <div className="pt-2 text-right">
-          <p className="mb-2 whitespace-pre-line text-sm font-semibold text-brand-800">{CLINIC_CONFIG.timing}</p>
-          <p className="text-sm text-gray-800">{addr.line1}</p>
-          <p className="text-sm text-gray-800">{addr.line2}</p>
-          <p className="text-sm text-gray-800">{addr.city}, {addr.state} - {addr.pincode}</p>
-        </div>
+        {addr && (
+          <div className="pt-2 text-right">
+            <p className="text-sm text-gray-800">{addr.line1}</p>
+            {addr.line2 && <p className="text-sm text-gray-800">{addr.line2}</p>}
+            <p className="text-sm text-gray-800">{addr.city}, {addr.state} - {addr.pincode}</p>
+          </div>
+        )}
       </div>
-      <h1 className="text-lg font-bold text-accent-600">{CLINIC_CONFIG.name}</h1>
+      <h1 className="text-lg font-bold text-accent-600">{clinic?.name ?? ""}</h1>
     </div>
   );
 }
 
-function PageFooter() {
+function PageFooter({ clinic }: { clinic: ClinicInfo | null }) {
   return (
     <div className="border-t-2 border-accent-600 pt-3 text-center">
-      <p className="pb-2 text-xs font-bold text-brand-800">{CLINIC_CONFIG.phones.join(" | ")}</p>
-      <p className="text-xs text-gray-700">{CLINIC_CONFIG.email} | {CLINIC_CONFIG.website}</p>
+      {clinic?.phones && clinic.phones.length > 0 && (
+        <p className="pb-2 text-xs font-bold text-brand-800">{clinic.phones.join(" | ")}</p>
+      )}
+      {(clinic?.email || clinic?.website) && (
+        <p className="text-xs text-gray-700">
+          {[clinic.email, clinic.website].filter(Boolean).join(" | ")}
+        </p>
+      )}
     </div>
   );
 }
 
-export default function CustomTemplateView({ template, patient }: CustomTemplateViewProps) {
-  const addr = CLINIC_CONFIG.address;
+export default function CustomTemplateView({ template, patient, clinic }: CustomTemplateViewProps) {
   const today = DateTime.now().setZone("Asia/Kolkata").toFormat("dd MMM yyyy");
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -168,19 +178,7 @@ export default function CustomTemplateView({ template, patient }: CustomTemplate
       >
         {/* First-page top chrome: flex-col so child mb-* margins are counted in offsetHeight */}
         <div ref={measureFirstTopRef} style={{ display: "flex", flexDirection: "column" }}>
-          <div className="mb-4 border-b-2 border-accent-600 pb-2">
-            <div className="mb-4 flex items-start justify-between">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={CLINIC_CONFIG.logo} alt="" className="h-20 w-40 rounded object-contain" />
-              <div className="pt-2 text-right">
-                <p className="mb-2 whitespace-pre-line text-sm font-semibold text-brand-800">{CLINIC_CONFIG.timing}</p>
-                <p className="text-sm text-gray-800">{addr.line1}</p>
-                <p className="text-sm text-gray-800">{addr.line2}</p>
-                <p className="text-sm text-gray-800">{addr.city}, {addr.state} - {addr.pincode}</p>
-              </div>
-            </div>
-            <h1 className="text-lg font-bold text-accent-600">{CLINIC_CONFIG.name}</h1>
-          </div>
+          <ClinicHeader clinic={clinic} />
           <div className="mb-4">
             <h2 className="text-base font-bold text-gray-800 uppercase tracking-wide">{template.title}</h2>
           </div>
@@ -213,24 +211,12 @@ export default function CustomTemplateView({ template, patient }: CustomTemplate
 
         {/* Other-page top chrome (no title / patient details) */}
         <div ref={measureOtherTopRef} style={{ display: "flex", flexDirection: "column" }}>
-          <div className="mb-4 border-b-2 border-accent-600 pb-2">
-            <div className="mb-4 flex items-start justify-between">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={CLINIC_CONFIG.logo} alt="" className="h-20 w-40 rounded object-contain" />
-              <div className="pt-2 text-right">
-                <p className="mb-2 whitespace-pre-line text-sm font-semibold text-brand-800">{CLINIC_CONFIG.timing}</p>
-                <p className="text-sm text-gray-800">{addr.line1}</p>
-                <p className="text-sm text-gray-800">{addr.line2}</p>
-                <p className="text-sm text-gray-800">{addr.city}, {addr.state} - {addr.pincode}</p>
-              </div>
-            </div>
-            <h1 className="text-lg font-bold text-accent-600">{CLINIC_CONFIG.name}</h1>
-          </div>
+          <ClinicHeader clinic={clinic} />
           <hr className="mb-6 border-gray-200" />
         </div>
 
         <div ref={measureFooterRef}>
-          <PageFooter />
+          <PageFooter clinic={clinic} />
         </div>
 
         <div
@@ -282,13 +268,13 @@ export default function CustomTemplateView({ template, patient }: CustomTemplate
                   className="select-none whitespace-nowrap text-[4rem] font-bold text-brand-100 opacity-30"
                   style={{ transform: "rotate(-45deg)", transformOrigin: "center" }}
                 >
-                  Dentalis Dental Care By Jamians
+                  {clinic?.name ?? ""}
                 </div>
               </div>
 
               {/* Clinic header — shown on every page */}
               <div className="relative z-10">
-                <ClinicHeader addr={addr} />
+                <ClinicHeader clinic={clinic} />
               </div>
 
               {/* Title + patient details — first page only */}
@@ -364,7 +350,7 @@ export default function CustomTemplateView({ template, patient }: CustomTemplate
 
               {/* Footer — pushed to bottom, shown on every page */}
               <div className="relative z-10 mt-auto">
-                <PageFooter />
+                <PageFooter clinic={clinic} />
               </div>
             </div>
           );

@@ -2,18 +2,19 @@
 
 import { Button } from "@/components/ui";
 import { formatISTDateTime } from "@/lib/utils/date";
-import { CLINIC_CONFIG } from "@/lib/config/clinic";
 
 interface SuccessStepProps {
   patientId: string;
   preferredDateTime: string;
   onReset: () => void;
+  clinicPhone?: string;
 }
 
 export function SuccessStep({
   patientId,
   preferredDateTime,
   onReset,
+  clinicPhone,
 }: SuccessStepProps) {
   return (
     <div className="rounded-lg border border-border-success/20 bg-surface-success p-6 text-center">
@@ -30,7 +31,7 @@ export function SuccessStep({
         Please arrive <span className="font-bold">15 mins</span> prior to your scheduled appointment to complete registration formalities and avoid any waiting rush.
       </p>
       <p className="mb-4 text-sm text-text-success">
-        For any queries or rescheduling, please contact us at {CLINIC_CONFIG.phones[0]}.
+        {clinicPhone && <>For any queries or rescheduling, please contact us at {clinicPhone}.</>}
       </p>
       <p className="mb-4 text-xs text-text-success/70">
         Patient ID: {patientId}
