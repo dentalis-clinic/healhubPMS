@@ -16,18 +16,20 @@ export default async function PrescriptionPage({
   // Support lookup by UUID or prescriptionId (RX-...)
   const isRxId = id.startsWith("RX-");
 
-  const [prescription, clinic] = await Promise.all([
-    prisma.prescription.findUnique({
-      where: isRxId ? { prescriptionId: id } : { id },
-      include: {
-        appointment: {
-          include: { patient: true },
-        },
-        prescribedBy: { select: { id: true, name: true, email: true } },
+  const clinic = await getClinicForPage();
+  if (!clinic) notFound();
+
+  const prescription = await prisma.prescription.findFirst({
+    where: isRxId
+      ? { prescriptionId: id, clinicId: clinic.id }
+      : { id, clinicId: clinic.id },
+    include: {
+      appointment: {
+        include: { patient: true },
       },
-    }),
-    getClinicForPage(),
-  ]);
+      prescribedBy: { select: { id: true, name: true, email: true } },
+    },
+  });
 
   if (!prescription) {
     notFound();

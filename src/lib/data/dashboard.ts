@@ -5,6 +5,7 @@ import type { AppointmentStatus } from "@/generated/prisma/client";
 /**
  * Server-side data fetchers for the dashboard.
  * Called directly from Server Components — no HTTP overhead, no re-auth.
+ * Callers must resolve clinicId (and timezone) from the session/subdomain and pass them in.
  *
  * Status transitions (PENDING→OVERDUE, CONFIRMED→COMPLETED) are handled by
  * Supabase pg_cron (scripts/setup-pg-cron.sql) — not on the read path.
@@ -24,16 +25,16 @@ export interface DashboardStatsData {
   totalPatients: number;
 }
 
-function getTodayBounds() {
-  const now = DateTime.now().setZone("Asia/Kolkata");
+function getTodayBounds(timezone: string) {
+  const now = DateTime.now().setZone(timezone);
   return {
     todayStart: now.startOf("day").toJSDate(),
     tomorrowStart: now.plus({ days: 1 }).startOf("day").toJSDate(),
   };
 }
 
-export async function fetchDashboardStats(): Promise<DashboardStatsData> {
-  const { todayStart, tomorrowStart } = getTodayBounds();
+export async function fetchDashboardStats(clinicId: string, timezone: string): Promise<DashboardStatsData> {
+  const { todayStart, tomorrowStart } = getTodayBounds(timezone);
 
   const [stats] = await prisma.$queryRaw<StatsRow[]>`
     SELECT
@@ -49,8 +50,9 @@ export async function fetchDashboardStats(): Promise<DashboardStatsData> {
           AND "preferredDateTime" >= ${todayStart}
           AND "preferredDateTime" < ${tomorrowStart}
       ) AS patients_seen_today,
-      (SELECT COUNT(*) FROM patients) AS total_patients
+      (SELECT COUNT(*) FROM patients WHERE "clinicId" = ${clinicId}) AS total_patients
     FROM appointments
+    WHERE "clinicId" = ${clinicId}
   `;
 
   return {
@@ -63,11 +65,11 @@ export async function fetchDashboardStats(): Promise<DashboardStatsData> {
 
 type DateFilter = "today" | "upcoming" | "all";
 
-export async function fetchAppointments(dateFilter: DateFilter = "today") {
-  const where: Record<string, unknown> = {};
+export async function fetchAppointments(dateFilter: DateFilter = "today", clinicId: string, timezone: string) {
+  const where: Record<string, unknown> = { clinicId };
 
   if (dateFilter === "today" || dateFilter === "upcoming") {
-    const { todayStart, tomorrowStart } = getTodayBounds();
+    const { todayStart, tomorrowStart } = getTodayBounds(timezone);
 
     if (dateFilter === "today") {
       where.preferredDateTime = { gte: todayStart, lt: tomorrowStart };

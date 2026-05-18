@@ -1,11 +1,16 @@
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getClinicForPage } from "@/lib/utils/get-clinic-for-page";
 import PatientsView from "@/components/admin/PatientsView";
 
 const PAGE_SIZE = 30;
 
-async function fetchPatients() {
+async function fetchPatients(clinicId: string) {
+  const where = { clinicId };
+
   const [patients, total] = await Promise.all([
     prisma.patient.findMany({
+      where,
       orderBy: { createdAt: "desc" },
       take: PAGE_SIZE,
       select: {
@@ -29,12 +34,11 @@ async function fetchPatients() {
         },
       },
     }),
-    prisma.patient.count(),
+    prisma.patient.count({ where }),
   ]);
 
   return {
     patients: patients.map((p) => {
-      // Compute outstanding balance across all non-cancelled appointments
       let outstanding = 0;
       let lastVisit: string | null = null;
 
@@ -69,6 +73,9 @@ async function fetchPatients() {
 }
 
 export default async function PatientsPage() {
-  const { patients, total } = await fetchPatients();
+  const clinic = await getClinicForPage();
+  if (!clinic) redirect("/admin/login");
+
+  const { patients, total } = await fetchPatients(clinic.id);
   return <PatientsView initialPatients={patients} initialTotal={total} />;
 }

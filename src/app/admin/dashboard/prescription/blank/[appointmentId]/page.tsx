@@ -10,13 +10,13 @@ interface PageProps {
 export default async function BlankPrescriptionPage({ params }: PageProps) {
   const { appointmentId } = await params;
 
-  const [appointment, clinic] = await Promise.all([
-    prisma.appointment.findUnique({
-      where: { id: appointmentId },
-      include: { patient: true, doctor: true },
-    }),
-    getClinicForPage(),
-  ]);
+  const clinic = await getClinicForPage();
+  if (!clinic) notFound();
+
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: appointmentId, clinicId: clinic.id },
+    include: { patient: true, doctor: true },
+  });
 
   if (!appointment) {
     notFound();

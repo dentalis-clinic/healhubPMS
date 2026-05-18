@@ -14,18 +14,20 @@ export default async function CustomTemplatePrintPage({ params, searchParams }: 
   const { templateId } = await params;
   const { patientId } = await searchParams;
 
-  const [template, foundPatient, clinic] = await Promise.all([
-    prisma.printable_templates.findUnique({
-      where: { id: templateId },
+  const clinic = await getClinicForPage();
+  if (!clinic) notFound();
+
+  const [template, foundPatient] = await Promise.all([
+    prisma.printable_templates.findFirst({
+      where: { id: templateId, clinicId: clinic.id },
       select: { title: true, templateType: true, showPatientDetails: true, content: true },
     }),
     patientId
-      ? prisma.patient.findUnique({
-          where: { id: patientId },
+      ? prisma.patient.findFirst({
+          where: { id: patientId, clinicId: clinic.id },
           select: { patientId: true, name: true, phone: true, age: true, sex: true, address: true },
         })
       : Promise.resolve(null),
-    getClinicForPage(),
   ]);
 
   if (!template) notFound();

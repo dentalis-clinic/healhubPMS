@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Input, FormField, Alert } from "@/components/ui";
 
@@ -804,13 +805,8 @@ export default function RegisterWizard() {
       <div className="w-full max-w-lg">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-6">
-            <div className="w-8 h-8 rounded-lg bg-interactive-primary flex items-center justify-center">
-              <svg className="w-5 h-5 text-text-inverse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75z" />
-              </svg>
-            </div>
-            <span className="text-sm font-semibold text-text-primary">HealthHub</span>
+          <div className="inline-flex mb-6">
+            <Image src="/logo.png" alt="HealthHub" width={160} height={44} className="h-11 w-auto" priority />
           </div>
           <h1 className="text-heading-1 font-bold text-text-primary">{stepTitles[step].heading}</h1>
           <p className="text-body-sm text-text-secondary mt-1">{stepTitles[step].sub}</p>

@@ -11,15 +11,14 @@ export default async function BlankTemplatePage({ searchParams }: PageProps) {
 
   let patient: PatientInfo | undefined;
 
-  const [foundPatient, clinic] = await Promise.all([
-    patientId
-      ? prisma.patient.findUnique({
-          where: { id: patientId },
-          select: { patientId: true, name: true, phone: true, age: true, sex: true, address: true },
-        })
-      : Promise.resolve(null),
-    getClinicForPage(),
-  ]);
+  const clinic = await getClinicForPage();
+
+  const foundPatient = patientId && clinic
+    ? await prisma.patient.findFirst({
+        where: { id: patientId, clinicId: clinic.id },
+        select: { patientId: true, name: true, phone: true, age: true, sex: true, address: true },
+      })
+    : null;
 
   if (foundPatient) {
     patient = {

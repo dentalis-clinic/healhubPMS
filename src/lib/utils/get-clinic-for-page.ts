@@ -14,6 +14,7 @@ export interface ClinicInfo {
   id: string;
   name: string;
   shortName: string;
+  timezone: string;
   address: ClinicAddress | null;
   phones: string[];
   email: string | null;
@@ -53,6 +54,7 @@ export async function getClinicForPage(): Promise<ClinicInfo | null> {
       id: true,
       name: true,
       shortName: true,
+      timezone: true,
       address: true,
       phones: true,
       email: true,
@@ -67,6 +69,7 @@ export async function getClinicForPage(): Promise<ClinicInfo | null> {
     id: clinic.id,
     name: clinic.name,
     shortName: clinic.shortName,
+    timezone: clinic.timezone,
     address: clinic.address as ClinicAddress | null,
     phones: clinic.phones,
     email: clinic.email,

@@ -1,11 +1,15 @@
+import { redirect } from "next/navigation";
 import { fetchDashboardStats, fetchAppointments } from "@/lib/data/dashboard";
+import { getClinicForPage } from "@/lib/utils/get-clinic-for-page";
 import DashboardHome from "@/components/admin/DashboardHome";
 
 export default async function HomePage() {
-  // Fetch in parallel — no HTTP overhead, no re-auth (layout already verified)
+  const clinic = await getClinicForPage();
+  if (!clinic) redirect("/admin/login");
+
   const [stats, { appointments }] = await Promise.all([
-    fetchDashboardStats(),
-    fetchAppointments("today"),
+    fetchDashboardStats(clinic.id, clinic.timezone ?? "Asia/Kolkata"),
+    fetchAppointments("today", clinic.id, clinic.timezone ?? "Asia/Kolkata"),
   ]);
 
   return <DashboardHome initialStats={stats} initialAppointments={appointments} />;
