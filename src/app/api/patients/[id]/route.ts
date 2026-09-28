@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { patchPatientSchema } from "@/lib/validations/appointment";
 import { normalizePhoneNumber } from "@/lib/utils/phone";
 import { validateOrigin } from "@/lib/utils/csrf";
-import { Prisma } from "@/generated/prisma/client";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { withUtcTimestamps } from "@/lib/supabase/serialize";
+import type { TablesUpdate } from "@/generated/supabase/database.types";
 
 export async function PATCH(
   request: NextRequest,
@@ -20,8 +21,15 @@ export async function PATCH(
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
     const { clinic } = auth;
+    const supabase = createAdminClient();
 
-    const existing = await prisma.patient.findUnique({ where: { id, clinicId: clinic.id } });
+    const { data: existing, error: existingError } = await supabase
+      .from("patients")
+      .select("id")
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (existingError) throw existingError;
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "Patient not found" },
@@ -41,7 +49,7 @@ export async function PATCH(
     }
 
     const data = parsed.data;
-    const updateData: Record<string, unknown> = {};
+    const updateData: TablesUpdate<"patients"> = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.email !== undefined) updateData.email = data.email || null;
     if (data.age !== undefined) updateData.age = data.age ?? null;
@@ -56,16 +64,17 @@ export async function PATCH(
       }
     }
 
-    const updated = await prisma.patient.update({ where: { id }, data: updateData });
+    // @updatedAt was set by Prisma client-side; the column has no DB default/trigger.
+    const { data: updated, error: updateError } = await supabase
+      .from("patients")
+      .update({ ...updateData, updatedAt: new Date().toISOString() })
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .select()
+      .single();
+    if (updateError) throw updateError;
 
-    return NextResponse.json({
-      success: true,
-      patient: {
-        ...updated,
-        createdAt: updated.createdAt.toISOString(),
-        updatedAt: updated.updatedAt.toISOString(),
-      },
-    });
+    return NextResponse.json({ success: true, patient: withUtcTimestamps(updated) });
   } catch (error) {
     console.error("PATCH /api/patients/[id] error:", error);
     return NextResponse.json(
@@ -89,29 +98,19 @@ export async function DELETE(
     if (auth.error) return auth.error;
     const { clinic } = auth;
 
-    const existing = await prisma.patient.findUnique({ where: { id, clinicId: clinic.id } });
-    if (!existing) {
+    // Cascades appointments + their prescriptions/payments; clinic-scoped, so a
+    // 0 count means the patient doesn't exist in this clinic.
+    const { data: deleted, error } = await createAdminClient().rpc("delete_patients", {
+      p_clinic_id: clinic.id,
+      p_ids: [id],
+    });
+    if (error) throw error;
+    if (deleted === 0) {
       return NextResponse.json(
         { success: false, error: "Patient not found" },
         { status: 404 }
       );
     }
-
-    await prisma.$transaction(async (tx) => {
-      const appointments = await tx.appointment.findMany({
-        where: { patientId: id },
-        select: { id: true },
-      });
-      const appointmentIds = appointments.map((a) => a.id);
-
-      if (appointmentIds.length > 0) {
-        await tx.prescription.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
-        await tx.payment.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
-        await tx.appointment.deleteMany({ where: { patientId: id } });
-      }
-
-      await tx.patient.delete({ where: { id } });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     return NextResponse.json({ success: true });
   } catch (error) {

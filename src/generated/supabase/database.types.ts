@@ -571,6 +571,7 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      delete_patients: { Args: { p_clinic_id: string; p_ids: string[] }; Returns: number };
       find_or_create_patient: {
         Args: {
           p_clinic_id: string;
@@ -591,6 +592,22 @@ export type Database = {
           pending_confirmations: number;
           today_appointments: number;
           total_patients: number;
+        }[];
+      };
+      search_patients: {
+        Args: { p_clinic_id: string; p_search?: string };
+        Returns: {
+          address: string;
+          age: number;
+          createdAt: string;
+          email: string;
+          id: string;
+          lastVisit: string;
+          name: string;
+          patientId: string;
+          phone: string;
+          sex: Database["public"]["Enums"]["Sex"];
+          totalVisits: number;
         }[];
       };
       update_appointment_atomic: {
