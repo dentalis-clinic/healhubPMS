@@ -71,9 +71,10 @@ src/
 - **Date/time:** Use Luxon for all timezone-sensitive operations. Use `clinic.timezone` from DB (Phase 2+). `'Asia/Kolkata'` only for Phase 1 compatibility shims.
 - **Validation:** Define Zod schemas in `src/lib/validations/`. Use the same schema on both client and server.
 - **Auth flow:** Supabase session check → verify `admins` table entry → authorize. Never skip the `admins` table check.
-- **Patient/appointment/prescription ID generation:** Via the `find_or_create_patient` / `create_appointment_atomic` / `create_prescription_with_id` RPCs — per-clinic `pg_advisory_xact_lock` + `MAX(serial)+1`. IDs are unique per clinic (`@@unique([clinicId, …])`), not globally. (`src/lib/utils/{patient-id,slot-conflict,prescription-id}.ts` remain only until `appointments/confirm` is converted.)
+- **Patient/appointment/prescription ID generation:** Via the `find_or_create_patient` / `create_appointment_atomic` / `create_prescription_with_id` RPCs — per-clinic `pg_advisory_xact_lock` + `MAX(serial)+1`. IDs are unique per clinic (`@@unique([clinicId, …])`), not globally. Confirming an existing appointment uses `confirm_appointment` (patient patch + slot check + confirm, all-or-nothing).
 - **Timestamps out of supabase-js:** PostgREST returns `timestamp` columns WITHOUT a zone (`"…T10:00:00"`), which JS parses as local time. Always pass through `utcIso` / `withUtcTimestamps` / `dateOnlyIso` (`@/lib/supabase/serialize`) before returning from a route.
 - **Timestamps into RPCs:** Send ISO strings (`date.toISOString()`); SQL casts via `::timestamptz AT TIME ZONE 'UTC'`, never bare `::timestamp` (silently drops offsets).
+- **`updatedAt` on plain `.update()`:** Prisma's `@updatedAt` was set client-side — the column has no DB default or trigger. Every supabase-js `.update()` must include `updatedAt: new Date().toISOString()` or it silently stops changing. (RPCs set it themselves.)
 - **RPC errors:** Plain `PostgrestError` objects, not Error subclasses — match on `error.message` (`SLOT_CONFLICT`, `NOT_FOUND`) or `error.code` (`23505` unique violation). Helpers in `@/lib/supabase/rpc`.
 - **New RPC functions:** `REVOKE ALL … FROM PUBLIC, anon, authenticated` + `GRANT EXECUTE … TO service_role`. Supabase default privileges grant `anon` EXECUTE explicitly — revoking from PUBLIC alone is not enough.
 - **Embedded relations:** PostgREST only infers one-to-one from a unique *constraint*; Prisma `@unique` creates an *index*. For a 1:1 FK, promote it (`ADD CONSTRAINT … UNIQUE USING INDEX …`) or the embed returns an array (`[]` is truthy). Filtering on an embedded column needs `!inner` to exclude parent rows.
@@ -94,6 +95,7 @@ src/
 - **Integration:** API route handlers against a real test DB — no mocked Prisma/supabase
 - **RPC migrations:** dry-run the whole migration inside `BEGIN … ROLLBACK` against the real DB and exercise every function before `prisma migrate deploy`
 - **Data-layer conversions:** parity test — run the old Prisma implementation (from git) and the new one side by side on realistic fixtures and deep-compare JSON output
+- **Admin-route E2E:** mint a session for an existing admin with `auth.admin.generateLink({ type: "magiclink" })` → `verifyOtp({ token_hash })` on an `@supabase/ssr` server client whose cookie jar you capture (no email sent; cookie format guaranteed correct). Drive routes over HTTP, then `auth.admin.signOut(accessToken)` and delete test rows.
 - **Middleware:** verify on `next build && next start`, not `next dev` — Turbopack dev served stale edge-middleware builds and ignored shell env (e.g. `DEFAULT_CLINIC_SLUG`)
 - **Auth:** Middleware session refresh and route protection
 

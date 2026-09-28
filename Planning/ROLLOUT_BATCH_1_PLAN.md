@@ -30,7 +30,7 @@
 - Live supabase-js RPC + parity suite (19/19): all RPC paths/errors via PostgREST, anon → 401, and **old Prisma `dashboard.ts` vs new** deep-equal JSON on realistic fixtures (today/upcoming/cancelled, doctor, decimal payments + WAIVED, prescription). Fixtures cleaned up.
 - E2E through the real route (dev server): new booking 201 (`preferredDateTime` round-trips with `Z`), duplicate 409, slot conflict 409 `SLOT_CONFLICT`. Rows cleaned up.
 - `tsc --noEmit` clean; `npm run lint` 0 errors (touched files: 0 new warnings); `npm run build` ✅; `npx opennextjs-cloudflare build` ✅ with `pg-cloudflare/dist/index.js` present.
-- **Not verified end-to-end:** the 3 admin-authenticated routes (follow-up, PATCH, prescriptions POST) through HTTP — needs an admin session. Their exact supabase-js calls are covered by the live RPC suite + types; a manual UI click-through is still worthwhile.
+- ~~Not verified end-to-end: the 3 admin-authenticated routes~~ — closed 2026-09-28 by the authenticated HTTP E2E suite run during Batch 2a (see progress doc).
 
 ---
 

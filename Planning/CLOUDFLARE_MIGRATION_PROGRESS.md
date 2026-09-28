@@ -11,7 +11,7 @@ Living document. Update this whenever a phase starts, finishes, or changes shape
 | 2 — `wrangler.jsonc` / `open-next.config.ts` scaffolding | ✅ Done | Also surfaced the `pg-cloudflare` build bug |
 | 3 — Data layer for Workers (2 prototype routes) | ✅ Done | **Architecture changed** — see below. Also fixed an unrelated pre-existing build blocker |
 | Rollout Batch 1 — typegen + `require-admin.ts` + 3 shared transactional helpers | ✅ Done (2026-09-27) | 7 files Prisma-free; 2 migrations applied; also fixed 2 latent ID-collision bugs, a 1:1-embed bug, RPC grants, and middleware header spoofing. Details: "What actually shipped" in `Planning/ROLLOUT_BATCH_1_PLAN.md` |
-| Rollout Batch 2+ — remaining Prisma-importing files | ⬜ Not started — **next** | Scoped at the bottom of `Planning/ROLLOUT_BATCH_1_PLAN.md`. Start with `appointments/confirm` (unblocks deleting the 3 old helpers). Follow the conventions now in `src/CONTEXT.md` → Patterns to Follow |
+| Rollout Batch 2 — remaining Prisma-importing files | 🟡 In progress | ✅ 2a `appointments/confirm` (2026-09-28): new `confirm_appointment` RPC (migration `20260928100000`), old `slot-conflict`/`patient-id`/`prescription-id` helpers deleted. Next: 2b `patients` DELETE + `patients/[id]` DELETE (bespoke RPCs), then 2c CRUD by domain (payments, doctors, printable-templates, admin, clinic), then 2d admin pages, reports, onboarding, phone-check, type-only imports. See Batch 2 log below |
 | DNS / Cloudflare account signup | ⬜ Deliberately deferred | User's choice: do this once code is ready to deploy |
 | Secrets (`wrangler secret put`) | ⬜ Not started | Needs the account from the step above |
 | Deploy & smoke test | ⬜ Not started | |
@@ -81,6 +81,13 @@ Only once **all 41 files** are converted (a future phase, not yet started) do Hy
 4. **Secrets** — `wrangler secret put` for `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `UPSTASH_REDIS_URL`, `UPSTASH_REDIS_TOKEN`. User-run, not passed through the assistant.
 5. **Deploy & smoke test** — `wrangler deploy`, curl-based + browser-based checks, per the original plan's step 8 (still valid).
 6. **Cleanup** — delete dead `src/lib/config/clinic.ts`, update `ops/CONTEXT.md`/`CLAUDE.md` to describe Cloudflare instead of Vercel, and once all 41 files are converted: remove Hyperdrive/`pg`/`pg-cloudflare`/the build workaround.
+
+## Batch 2 log
+
+### 2a — `appointments/confirm` (done 2026-09-28)
+- Flows B/C reuse `find_or_create_patient` + `create_appointment_atomic`. Flow A uses the new `confirm_appointment` RPC: patient patch + slot check + confirm in one transaction (conflict rolls back the patient edits, same as the old Serializable tx). It also re-checks the confirmable status *inside* the lock; the Prisma version checked outside the transaction, so a concurrently cancelled appointment could still be confirmed → now `NOT_CONFIRMABLE` → 400.
+- Found: Prisma `@updatedAt` is client-side only (no DB default/trigger) → plain supabase-js `.update()` must set `updatedAt` explicitly. Added to `src/CONTEXT.md`.
+- Verified: migration dry-run 11/11 (rolled back); **authenticated HTTP E2E 18/18** against the dev server with a minted admin session (all 3 confirm flows, rollback-on-conflict, plus follow-up / PATCH / prescriptions POST — closing Batch 1's unverified gap); `tsc`, eslint, `opennextjs-cloudflare build` ✅. Test rows + session cleaned up.
 
 ## Corrections to earlier notes in this file
 
