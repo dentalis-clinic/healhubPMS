@@ -39,3 +39,8 @@ next-env.d.ts
 
 # prisma
 /src/generated/prisma
+
+# cloudflare / opennextjs
+/.open-next/
+/.wrangler/
+cloudflare-env.d.ts

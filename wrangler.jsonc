@@ -1,0 +1,44 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dentalis-pms",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-09-20",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  // Static assets emitted by `opennextjs-cloudflare build` (client JS/CSS,
+  // public/ files, etc.), served by Cloudflare's Asset Worker.
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  // Hyperdrive connection pooling in front of Supabase Postgres.
+  // The "id" below is a PLACEHOLDER — wrangler dev/preview/deploy will not
+  // work until it's replaced. To get a real one (a later phase, requires a
+  // Cloudflare account/login that's intentionally not set up yet):
+  //   1. wrangler login
+  //   2. wrangler hyperdrive create dentalis-pms-db --connection-string="<Supabase DIRECT_URL>"
+  //   3. Replace REPLACE_WITH_HYPERDRIVE_ID with the id it prints.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "REPLACE_WITH_HYPERDRIVE_ID"
+    }
+  ],
+
+  // Non-secret runtime vars. Secrets (SUPABASE_SERVICE_ROLE_KEY,
+  // NEXT_PUBLIC_SUPABASE_ANON_KEY, DATABASE_URL, DIRECT_URL,
+  // UPSTASH_REDIS_URL, UPSTASH_REDIS_TOKEN, CRON_SECRET) are NOT set here —
+  // they're set later via `wrangler secret put <NAME>`.
+  //
+  // DEFAULT_CLINIC_SLUG is intentionally NOT set here — it must stay unset
+  // in production so the root domain falls through to /register instead of
+  // resolving to a specific clinic subdomain. See middleware.ts.
+  "vars": {
+    "NEXT_PUBLIC_APP_DOMAIN": "healthhub.app",
+    "NEXT_PUBLIC_SUPABASE_URL": "https://apuxomkxwtjcoaqjhlux.supabase.co",
+    "TZ": "Asia/Kolkata",
+    "RATE_LIMIT_MAX": "3",
+    "RATE_LIMIT_WINDOW_MS": "3600000"
+  }
+}
