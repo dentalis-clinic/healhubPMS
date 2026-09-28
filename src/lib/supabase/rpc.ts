@@ -38,11 +38,21 @@ export type NewPrescriptionData = Pick<
   "appointmentId" | "diagnosis" | "medications" | "treatmentPlan" | "nextVisitDate" | "advice" | "prescribedById"
 >;
 
+/** p_patient_data for confirm_appointment — a present key sets that column. */
+export type ConfirmPatientPatch = Pick<TablesUpdate<"patients">, "name" | "sex" | "email" | "address" | "age">;
+
+/** p_appointment_data for confirm_appointment — status is always set to CONFIRMED by the function. */
+export type ConfirmAppointmentPatch = Pick<
+  TablesUpdate<"appointments">,
+  "preferredDateTime" | "reasonForVisit" | "adminUserId" | "doctorId" | "totalAmount"
+>;
+
 /** SQLSTATE for unique_violation. */
 export const PG_UNIQUE_VIOLATION = "23505";
 
 export const isSlotConflict = (error: PostgrestError) => error.message === "SLOT_CONFLICT";
 export const isNotFound = (error: PostgrestError) => error.message === "NOT_FOUND";
+export const isNotConfirmable = (error: PostgrestError) => error.message === "NOT_CONFIRMABLE";
 
 /** Same body/status the old SlotConflictError catch branches returned. */
 export function slotConflictResponse() {

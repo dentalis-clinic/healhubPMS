@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
-import { Prisma } from "@/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { confirmAppointmentSchema } from "@/lib/validations/appointment";
 import { normalizePhoneNumber } from "@/lib/utils/phone";
-import { findOrCreatePatient, generateAppointmentId } from "@/lib/utils/patient-id";
-import { checkSlotConflict, SlotConflictError } from "@/lib/utils/slot-conflict";
 import { validateOrigin } from "@/lib/utils/csrf";
-import type { Sex } from "@/generated/prisma/client";
-
-const MAX_APT_RETRIES = 3;
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  isNotConfirmable,
+  isNotFound,
+  isSlotConflict,
+  slotConflictResponse,
+  type ConfirmAppointmentPatch,
+  type ConfirmPatientPatch,
+  type NewAppointmentData,
+  type PatientLookupData,
+} from "@/lib/supabase/rpc";
+import type { TablesUpdate } from "@/generated/supabase/database.types";
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   PENDING: ["CONFIRMED", "CANCELLED"],
@@ -40,11 +45,17 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data;
     const allowOverride = body.allowOverride === true;
+    const supabase = createAdminClient();
 
     // Validate doctor exists, is active, and belongs to this clinic
-    const doctor = await prisma.doctor.findUnique({
-      where: { id: data.doctorId, clinicId: clinic.id, isActive: true },
-    });
+    const { data: doctor, error: doctorError } = await supabase
+      .from("doctors")
+      .select("id")
+      .eq("id", data.doctorId)
+      .eq("clinicId", clinic.id)
+      .eq("isActive", true)
+      .maybeSingle();
+    if (doctorError) throw doctorError;
     if (!doctor) {
       return NextResponse.json(
         { success: false, error: "Selected doctor not found or inactive." },
@@ -62,10 +73,13 @@ export async function POST(request: NextRequest) {
 
     // --- Flow A: Confirm existing PENDING/OVERDUE appointment ---
     if (data.existingAppointmentId) {
-      const appointment = await prisma.appointment.findUnique({
-        where: { id: data.existingAppointmentId, clinicId: clinic.id },
-        include: { patient: true },
-      });
+      const { data: appointment, error: appointmentError } = await supabase
+        .from("appointments")
+        .select("id, status, reasonForVisit, patient:patients(patientId, name)")
+        .eq("id", data.existingAppointmentId)
+        .eq("clinicId", clinic.id)
+        .maybeSingle();
+      if (appointmentError) throw appointmentError;
 
       if (!appointment) {
         return NextResponse.json(
@@ -81,40 +95,46 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const patientUpdates: Record<string, unknown> = {};
-      if (data.name && data.name !== appointment.patient.name) patientUpdates.name = data.name;
-      if (data.sex) patientUpdates.sex = data.sex as Sex;
-      if (data.email) patientUpdates.email = data.email;
-      if (data.address) patientUpdates.address = data.address;
-      if (data.age != null) patientUpdates.age = data.age;
+      const patientPatch: ConfirmPatientPatch = {};
+      if (data.name && data.name !== appointment.patient.name) patientPatch.name = data.name;
+      if (data.sex) patientPatch.sex = data.sex;
+      if (data.email) patientPatch.email = data.email;
+      if (data.address) patientPatch.address = data.address;
+      if (data.age != null) patientPatch.age = data.age;
 
-      const updated = await prisma.$transaction(
-        async (tx) => {
-          if (Object.keys(patientUpdates).length > 0) {
-            await tx.patient.update({
-              where: { id: appointment.patient.id },
-              data: patientUpdates,
-            });
-          }
+      const appointmentPatch: ConfirmAppointmentPatch = {
+        reasonForVisit: data.reasonForVisit || appointment.reasonForVisit,
+        preferredDateTime: data.preferredDateTime.toISOString(),
+        adminUserId: admin.id,
+        doctorId: data.doctorId,
+      };
+      if (data.totalAmount != null) appointmentPatch.totalAmount = data.totalAmount;
 
-          if (!allowOverride) {
-            await checkSlotConflict(tx, clinic.id, data.preferredDateTime, appointment.id);
-          }
-
-          return tx.appointment.update({
-            where: { id: appointment.id },
-            data: {
-              status: "CONFIRMED",
-              reasonForVisit: data.reasonForVisit || appointment.reasonForVisit,
-              preferredDateTime: data.preferredDateTime,
-              adminUserId: admin.id,
-              doctorId: data.doctorId,
-              totalAmount: data.totalAmount != null ? data.totalAmount : undefined,
-            },
-          });
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-      );
+      // Patient patch, slot check, and confirm run in one transaction (conflict rolls back all).
+      const { data: updated, error: rpcError } = await supabase.rpc("confirm_appointment", {
+        p_clinic_id: clinic.id,
+        p_id: appointment.id,
+        p_patient_data: patientPatch,
+        p_appointment_data: appointmentPatch,
+        p_allow_override: allowOverride,
+      });
+      if (rpcError) {
+        if (isSlotConflict(rpcError)) return slotConflictResponse();
+        if (isNotFound(rpcError)) {
+          return NextResponse.json(
+            { success: false, error: "Appointment not found" },
+            { status: 404 }
+          );
+        }
+        // Status changed between the check above and the locked re-check.
+        if (isNotConfirmable(rpcError)) {
+          return NextResponse.json(
+            { success: false, error: "This appointment can no longer be confirmed." },
+            { status: 400 }
+          );
+        }
+        throw rpcError;
+      }
 
       return NextResponse.json(
         {
@@ -129,9 +149,13 @@ export async function POST(request: NextRequest) {
 
     // --- Flow B: New appointment for existing patient ---
     if (data.existingPatientId) {
-      const patient = await prisma.patient.findUnique({
-        where: { id: data.existingPatientId, clinicId: clinic.id },
-      });
+      const { data: patient, error: patientError } = await supabase
+        .from("patients")
+        .select("id, patientId, email, address, age")
+        .eq("id", data.existingPatientId)
+        .eq("clinicId", clinic.id)
+        .maybeSingle();
+      if (patientError) throw patientError;
 
       if (!patient) {
         return NextResponse.json(
@@ -140,54 +164,44 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const patientUpdates: Record<string, unknown> = {};
-      if (data.sex) patientUpdates.sex = data.sex as Sex;
+      const patientUpdates: TablesUpdate<"patients"> = {};
+      if (data.sex) patientUpdates.sex = data.sex;
       if (data.email && !patient.email) patientUpdates.email = data.email;
       if (data.address && !patient.address) patientUpdates.address = data.address;
       if (data.age != null && patient.age == null) patientUpdates.age = data.age;
 
       if (Object.keys(patientUpdates).length > 0) {
-        await prisma.patient.update({ where: { id: patient.id }, data: patientUpdates });
+        // @updatedAt was set by Prisma client-side; the column has no DB default/trigger.
+        const { error: updateError } = await supabase
+          .from("patients")
+          .update({ ...patientUpdates, updatedAt: new Date().toISOString() })
+          .eq("id", patient.id)
+          .eq("clinicId", clinic.id);
+        if (updateError) throw updateError;
       }
 
-      const appointmentType = data.visitType === "FOLLOW_UP" ? "FOLLOW_UP" : "WALK_IN";
-
-      let appointment!: Awaited<ReturnType<typeof prisma.appointment.create>>;
-      for (let attempt = 0; attempt < MAX_APT_RETRIES; attempt++) {
-        try {
-          appointment = await prisma.$transaction(
-            async (tx) => {
-              if (!allowOverride) {
-                await checkSlotConflict(tx, clinic.id, data.preferredDateTime);
-              }
-              const appointmentId = await generateAppointmentId(tx, clinic.id, clinic.timezone, attempt);
-              return tx.appointment.create({
-                data: {
-                  clinicId: clinic.id,
-                  appointmentId,
-                  patientId: patient.id,
-                  type: appointmentType,
-                  bookingChannel: data.isPhoneBooking ? "PHONE" : "WALK_IN",
-                  visitType: data.visitType === "FOLLOW_UP" ? "FOLLOW_UP" : "NEW_CONSULTATION",
-                  status: "CONFIRMED",
-                  preferredDateTime: data.preferredDateTime,
-                  reasonForVisit: data.reasonForVisit || null,
-                  submittedBy: "ADMIN",
-                  adminUserId: admin.id,
-                  doctorId: data.doctorId,
-                  totalAmount: data.totalAmount != null ? data.totalAmount : null,
-                },
-              });
-            },
-            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-          );
-          break;
-        } catch (err: unknown) {
-          const isUniqueViolation =
-            err instanceof Error && "code" in err && (err as { code: string }).code === "P2002";
-          if (isUniqueViolation && attempt < MAX_APT_RETRIES - 1) continue;
-          throw err;
-        }
+      const appointmentData: NewAppointmentData = {
+        patientId: patient.id,
+        type: data.visitType === "FOLLOW_UP" ? "FOLLOW_UP" : "WALK_IN",
+        bookingChannel: data.isPhoneBooking ? "PHONE" : "WALK_IN",
+        visitType: data.visitType === "FOLLOW_UP" ? "FOLLOW_UP" : "NEW_CONSULTATION",
+        status: "CONFIRMED",
+        preferredDateTime: data.preferredDateTime.toISOString(),
+        reasonForVisit: data.reasonForVisit || null,
+        submittedBy: "ADMIN",
+        adminUserId: admin.id,
+        doctorId: data.doctorId,
+        totalAmount: data.totalAmount != null ? data.totalAmount : null,
+      };
+      const { data: appointment, error: rpcError } = await supabase.rpc("create_appointment_atomic", {
+        p_clinic_id: clinic.id,
+        p_timezone: clinic.timezone,
+        p_allow_override: allowOverride,
+        p_data: appointmentData,
+      });
+      if (rpcError) {
+        if (isSlotConflict(rpcError)) return slotConflictResponse();
+        throw rpcError;
       }
 
       return NextResponse.json(
@@ -202,73 +216,58 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Flow C: Brand new patient ---
-    const { patientId, patient } = await findOrCreatePatient(
-      prisma,
-      {
-        name: data.name,
-        phone: normalizedPhone,
-        email: data.email || null,
-        age: data.age ?? null,
-        sex: (data.sex as Sex) || null,
-        address: data.address || null,
-      },
-      { id: clinic.id, shortName: clinic.shortName, timezone: clinic.timezone }
-    );
+    const lookup: PatientLookupData = {
+      name: data.name,
+      phone: normalizedPhone,
+      email: data.email || null,
+      age: data.age ?? null,
+      sex: data.sex || null,
+      address: data.address || null,
+    };
+    const { data: patient, error: findError } = await supabase
+      .rpc("find_or_create_patient", {
+        p_clinic_id: clinic.id,
+        p_clinic_short_name: clinic.shortName,
+        p_timezone: clinic.timezone,
+        p_data: lookup,
+      })
+      .single();
+    if (findError) throw findError;
 
-    let appointment!: Awaited<ReturnType<typeof prisma.appointment.create>>;
-    for (let attempt = 0; attempt < MAX_APT_RETRIES; attempt++) {
-      try {
-        appointment = await prisma.$transaction(
-          async (tx) => {
-            if (!allowOverride) {
-              await checkSlotConflict(tx, clinic.id, data.preferredDateTime);
-            }
-            const appointmentId = await generateAppointmentId(tx, clinic.id, clinic.timezone, attempt);
-            return tx.appointment.create({
-              data: {
-                clinicId: clinic.id,
-                appointmentId,
-                patientId: patient.id,
-                type: "WALK_IN",
-                bookingChannel: data.isPhoneBooking ? "PHONE" : "WALK_IN",
-                visitType: "NEW_CONSULTATION",
-                status: "CONFIRMED",
-                preferredDateTime: data.preferredDateTime,
-                reasonForVisit: data.reasonForVisit || null,
-                submittedBy: "ADMIN",
-                adminUserId: admin.id,
-                doctorId: data.doctorId,
-                totalAmount: data.totalAmount != null ? data.totalAmount : null,
-              },
-            });
-          },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-        );
-        break;
-      } catch (err: unknown) {
-        const isUniqueViolation =
-          err instanceof Error && "code" in err && (err as { code: string }).code === "P2002";
-        if (isUniqueViolation && attempt < MAX_APT_RETRIES - 1) continue;
-        throw err;
-      }
+    const appointmentData: NewAppointmentData = {
+      patientId: patient.id,
+      type: "WALK_IN",
+      bookingChannel: data.isPhoneBooking ? "PHONE" : "WALK_IN",
+      visitType: "NEW_CONSULTATION",
+      status: "CONFIRMED",
+      preferredDateTime: data.preferredDateTime.toISOString(),
+      reasonForVisit: data.reasonForVisit || null,
+      submittedBy: "ADMIN",
+      adminUserId: admin.id,
+      doctorId: data.doctorId,
+      totalAmount: data.totalAmount != null ? data.totalAmount : null,
+    };
+    const { data: appointment, error: rpcError } = await supabase.rpc("create_appointment_atomic", {
+      p_clinic_id: clinic.id,
+      p_timezone: clinic.timezone,
+      p_allow_override: allowOverride,
+      p_data: appointmentData,
+    });
+    if (rpcError) {
+      if (isSlotConflict(rpcError)) return slotConflictResponse();
+      throw rpcError;
     }
 
     return NextResponse.json(
       {
         success: true,
         appointmentId: appointment.id,
-        patientId,
+        patientId: patient.patientId,
         message: "Patient registered and appointment confirmed.",
       },
       { status: 201 }
     );
   } catch (error) {
-    if (error instanceof SlotConflictError) {
-      return NextResponse.json(
-        { success: false, error: error.message, code: "SLOT_CONFLICT" },
-        { status: 409 }
-      );
-    }
     console.error("POST /api/appointments/confirm error:", error);
     return NextResponse.json(
       { success: false, error: "An unexpected error occurred." },

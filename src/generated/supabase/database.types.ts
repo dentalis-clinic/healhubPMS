@@ -484,6 +484,41 @@ export type Database = {
         Returns: string;
       };
       bulk_delete_appointments: { Args: { p_clinic_id: string; p_ids: string[] }; Returns: number };
+      confirm_appointment: {
+        Args: {
+          p_allow_override?: boolean;
+          p_appointment_data: Json;
+          p_clinic_id: string;
+          p_id: string;
+          p_patient_data: Json;
+        };
+        Returns: {
+          adminUserId: string | null;
+          appointmentId: string;
+          bookingChannel: Database["public"]["Enums"]["BookingChannel"];
+          clinicId: string;
+          createdAt: string;
+          doctorId: string | null;
+          id: string;
+          notes: string | null;
+          patientId: string;
+          preferredDateTime: string;
+          priority: Database["public"]["Enums"]["AppointmentPriority"] | null;
+          reasonForVisit: string | null;
+          status: Database["public"]["Enums"]["AppointmentStatus"];
+          submittedBy: Database["public"]["Enums"]["SubmissionSource"];
+          totalAmount: number | null;
+          type: Database["public"]["Enums"]["AppointmentType"] | null;
+          updatedAt: string;
+          visitType: Database["public"]["Enums"]["VisitType"];
+        };
+        SetofOptions: {
+          from: "*";
+          to: "appointments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       create_appointment_atomic: {
         Args: { p_allow_override: boolean; p_clinic_id: string; p_data: Json; p_timezone: string };
         Returns: {
