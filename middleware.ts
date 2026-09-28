@@ -14,6 +14,8 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
+  // Routes trust these as middleware-verified — never let a client supply them.
+  for (const h of ["x-clinic-id", "x-clinic-timezone", "x-clinic-short-name"]) requestHeaders.delete(h);
 
   const { pathname } = request.nextUrl;
 
