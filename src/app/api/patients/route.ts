@@ -91,7 +91,7 @@ export async function DELETE(request: NextRequest) {
     if (auth.error) return auth.error;
     const { clinic } = auth;
 
-    const body = await request.json();
+    const body = (await request.json()) as Record<string, unknown>;
     const ids: unknown = body.ids;
 
     if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== "string")) {

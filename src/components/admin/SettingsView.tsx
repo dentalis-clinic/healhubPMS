@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button, Input, FormField, Alert } from "@/components/ui";
 import { useDashboard } from "./DashboardContext";
 import type { DoctorRow } from "@/types/patient";
+import type { ApiJson } from "@/types/api";
 import SelectPatientModal from "./SelectPatientModal";
 import TemplateFormModal from "./TemplateFormModal";
 import ClinicSettingsTab from "./ClinicSettingsTab";
@@ -62,7 +63,7 @@ function AddDoctorModal({
           registrationNumber: regNumber.trim() || undefined,
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
 
       if (!res.ok) {
         setState({ status: "error", message: data.error ?? "Failed to add doctor." });
@@ -165,7 +166,7 @@ function AddAdminModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), email: email.trim(), password }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
 
       if (!res.ok) {
         setState({ status: "error", message: data.error ?? "Failed to create admin." });
@@ -268,7 +269,7 @@ function EditAdminModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), email: email.trim() }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
 
       if (!res.ok) {
         setError(data.error ?? "Failed to update admin.");
@@ -361,7 +362,7 @@ function EditDoctorModal({
           registrationNumber: registrationNumber.trim() || undefined,
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
 
       if (!res.ok) {
         setError(data.error ?? "Failed to update doctor.");
@@ -478,7 +479,7 @@ export default function SettingsView() {
     try {
       setLoadingAdmins(true);
       const res = await fetch("/api/admin");
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & { admins: AdminRow[] };
       if (data.success) setAdmins(data.admins);
     } catch (err) {
       console.error("Failed to fetch admins:", err);
@@ -491,7 +492,7 @@ export default function SettingsView() {
     try {
       setLoadingDoctors(true);
       const res = await fetch("/api/doctors?includeInactive=true");
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & { doctors: DoctorRow[] };
       if (data.success) setDoctors(data.doctors);
     } catch (err) {
       console.error("Failed to fetch doctors:", err);
@@ -504,7 +505,7 @@ export default function SettingsView() {
     try {
       setLoadingTemplates(true);
       const res = await fetch("/api/printable-templates");
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & { templates: PrintableTemplate[] };
       if (data.success) setTemplates(data.templates);
     } catch (err) {
       console.error("Failed to fetch templates:", err);
@@ -524,7 +525,7 @@ export default function SettingsView() {
     setDeletingTemplateId(id);
     try {
       const res = await fetch(`/api/printable-templates/${id}`, { method: "DELETE" });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
       if (!res.ok) {
         setTemplateDeleteError(data.error ?? "Failed to delete document.");
         setDeletingTemplateId(null);
@@ -556,7 +557,7 @@ export default function SettingsView() {
     setDeletingId(id);
     try {
       const res = await fetch(`/api/admin/${id}`, { method: "DELETE" });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
       if (!res.ok) {
         setDeleteError(data.error ?? "Failed to delete admin.");
         setDeletingId(null);
@@ -574,7 +575,7 @@ export default function SettingsView() {
     setResetStatus({ id, status: "loading" });
     try {
       const res = await fetch(`/api/admin/${id}/reset-password`, { method: "POST" });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
       if (!res.ok) {
         setResetStatus({ id, status: "error", message: data.error ?? "Failed to send reset email." });
         return;
@@ -591,7 +592,7 @@ export default function SettingsView() {
     setDeletingDoctorId(id);
     try {
       const res = await fetch(`/api/doctors/${id}`, { method: "DELETE" });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
       if (!res.ok) {
         setDoctorDeleteError(data.error ?? "Failed to delete doctor.");
         setDeletingDoctorId(null);
@@ -897,7 +898,7 @@ export default function SettingsView() {
                       <button
                         onClick={async () => {
                           const res = await fetch(`/api/printable-templates/${tmpl.id}`);
-                          const data = await res.json();
+                          const data = (await res.json()) as ApiJson & { template: PrintableTemplateWithContent };
                           if (data.success) setEditingTemplate(data.template);
                         }}
                         className="rounded px-2 py-1 text-xs font-medium text-text-secondary hover:bg-surface-secondary hover:text-text-primary"

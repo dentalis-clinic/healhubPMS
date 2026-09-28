@@ -7,6 +7,7 @@ import PatientTable from "@/components/PatientTable";
 import CSVExportButton from "@/components/CSVExportButton";
 import { useDashboard } from "./DashboardContext";
 import { Button, Input } from "@/components/ui";
+import type { ApiJson } from "@/types/api";
 
 type DateTab = "all" | "today" | "upcoming";
 type StatusFilter = "" | "PENDING" | "CONFIRMED" | "OVERDUE";
@@ -104,7 +105,10 @@ export default function AppointmentsView({
         params.set("pageSize", String(PAGE_SIZE));
 
         const res = await fetch(`/api/appointments/list?${params}`);
-        const data = await res.json();
+        const data = (await res.json()) as ApiJson & {
+          appointments: AppointmentRow[];
+          total: number;
+        };
         if (data.success) {
           setAppointments(data.appointments);
           setTotal(data.total);

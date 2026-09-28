@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { PaymentRow } from "@/components/admin/PaymentRow";
 import type { PaymentEntry } from "@/components/admin/PaymentRow";
+import type { ApiJson } from "@/types/api";
 
 interface Doctor {
   id: string;
@@ -67,7 +68,7 @@ export function EditAppointmentModal({
   // Fetch active doctors
   useEffect(() => {
     fetch("/api/doctors")
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<ApiJson & { doctors: Doctor[] }>)
       .then((data) => { if (data.success) setDoctors(data.doctors); })
       .catch(() => {});
   }, []);
@@ -77,7 +78,7 @@ export function EditAppointmentModal({
     if (appointment.status === "CANCELLED") return;
     setPaymentsLoading(true);
     fetch(`/api/payments?appointmentId=${appointment.id}`)
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<ApiJson & { payments: PaymentEntry[] }>)
       .then((data) => { if (data.success) setPayments(data.payments); })
       .catch(() => {})
       .finally(() => setPaymentsLoading(false));
@@ -122,7 +123,7 @@ export function EditAppointmentModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
       if (!res.ok || !data.success) {
         setError(data.error ?? "Failed to save. Please try again.");
         return;
@@ -140,7 +141,7 @@ export function EditAppointmentModal({
             notes: stagedInstalment.notes,
           }),
         });
-        const payData = await payRes.json();
+        const payData = (await payRes.json()) as ApiJson;
         if (!payRes.ok || !payData.success) {
           setError(payData.error ?? "Appointment saved, but failed to record payment.");
           return;

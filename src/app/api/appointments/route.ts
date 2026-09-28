@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     const { clinic, error: clinicError } = getClinicContext(request);
     if (clinicError) return clinicError;
 
-    const body = await request.json();
+    const body = (await request.json()) as Record<string, unknown>;
 
     const [clinicRow, supabase] = await Promise.all([
       prisma.clinic.findUnique({

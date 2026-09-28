@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { PaymentRow } from "@/components/admin/PaymentRow";
 import type { PaymentEntry } from "@/components/admin/PaymentRow";
+import type { ApiJson } from "@/types/api";
 
 interface AppointmentDetailsModalProps {
   appointment: AppointmentRow;
@@ -46,7 +47,7 @@ export function AppointmentDetailsModal({
     if (!showBilling) return;
     setPaymentsLoading(true);
     fetch(`/api/payments?appointmentId=${appointment.id}`)
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<ApiJson & { payments: PaymentEntry[] }>)
       .then((data) => { if (data.success) setPayments(data.payments); })
       .catch(() => {})
       .finally(() => setPaymentsLoading(false));

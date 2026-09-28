@@ -8,6 +8,7 @@ import { Badge, Button } from "@/components/ui";
 import { useDashboard } from "./DashboardContext";
 import type { DashboardStats } from "@/types/dashboard";
 import type { AppointmentRow } from "@/types/patient";
+import type { ApiJson } from "@/types/api";
 
 const KPI_LABELS: { key: keyof DashboardStats; label: string; href: string }[] = [
   { key: "todayAppointments", label: "Today's Appointments", href: "/admin/dashboard/appointments?tab=today" },
@@ -59,8 +60,8 @@ export default function DashboardHome({
       ]);
 
       const [statsData, appointmentsData] = await Promise.all([
-        statsRes.json(),
-        appointmentsRes.json(),
+        statsRes.json() as Promise<ApiJson & { stats: DashboardStats }>,
+        appointmentsRes.json() as Promise<ApiJson & { appointments: AppointmentRow[] }>,
       ]);
 
       if (statsData.success) setStats(statsData.stats);

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Alert, Button, FormField, Input } from "@/components/ui";
+import type { ApiJson } from "@/types/api";
 
 interface BusinessHoursSession {
   start: string;
@@ -59,7 +60,7 @@ function LogoUploader({
       const fd = new FormData();
       fd.append("logo", file);
       const res = await fetch("/api/clinic/logo", { method: "POST", body: fd });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & { logo: string | null };
       if (!res.ok) {
         setError(data.error ?? "Upload failed.");
         setPreview(currentLogo);
@@ -81,7 +82,7 @@ function LogoUploader({
     try {
       const res = await fetch("/api/clinic/logo", { method: "DELETE" });
       if (!res.ok) {
-        const d = await res.json();
+        const d = (await res.json()) as ApiJson;
         setError(d.error ?? "Failed to remove logo.");
         return;
       }
@@ -343,7 +344,7 @@ export default function ClinicSettingsTab() {
     setFetchError("");
     try {
       const res = await fetch("/api/clinic/settings");
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & { clinic: ClinicSettings };
       if (!res.ok || !data.success) {
         setFetchError(data.error ?? "Failed to load settings.");
         return;
@@ -387,7 +388,7 @@ export default function ClinicSettingsTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & { clinic: ClinicSettings };
       if (!res.ok || !data.success) {
         setSaveError((prev) => ({ ...prev, [section]: data.error ?? "Failed to save." }));
         return;

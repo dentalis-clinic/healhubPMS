@@ -7,6 +7,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
 import { Button, Input, FormField, Alert } from "@/components/ui";
+import type { ApiJson } from "@/types/api";
 
 type TemplateType = "DOCUMENT" | "SURVEY";
 
@@ -143,7 +144,7 @@ export default function TemplateFormModal({ initial, onClose, onSaved }: Templat
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: title.trim(), templateType, showPatientDetails, content }),
         });
-        const data = await res.json();
+        const data = (await res.json()) as ApiJson;
 
         if (!res.ok) {
           setState({ status: "error", message: data.error ?? "Failed to save template." });

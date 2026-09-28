@@ -7,6 +7,7 @@ import type {
   PhoneCheckStatus,
   MaskedPatient,
 } from "@/types/patient";
+import type { ApiJson } from "@/types/api";
 
 const IST_ZONE = "Asia/Kolkata";
 const DATETIME_FORMAT = "yyyy-MM-dd'T'HH:mm";
@@ -227,7 +228,10 @@ export function useBookingFlow(): BookingFlowState & BookingFlowActions {
         body: JSON.stringify(body),
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & {
+        patientId: string;
+        preferredDateTime: string;
+      };
 
       if (!res.ok) {
         setSubmitState({

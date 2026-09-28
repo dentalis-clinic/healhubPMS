@@ -5,6 +5,7 @@ import { DateTime } from "luxon";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { FormField } from "@/components/ui/FormField";
+import type { ApiJson } from "@/types/api";
 
 export interface PatientRow {
   id: string;
@@ -73,7 +74,9 @@ function EditModal({ patient, onClose, onSaved }: EditModalProps) {
           address: address.trim() || undefined,
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & {
+        patient: Pick<PatientRow, "name" | "phone" | "email" | "age" | "sex" | "address">;
+      };
       if (!data.success) {
         setError(data.error ?? "Failed to save");
         return;
@@ -249,7 +252,7 @@ export default function PatientsView({ initialPatients, initialTotal }: Patients
       params.set("page", String(p));
       params.set("limit", String(PAGE_SIZE));
       const res = await fetch(`/api/patients?${params}`);
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & { patients: PatientRow[]; total: number };
       if (data.success) {
         setPatients(data.patients);
         setTotal(data.total);
@@ -322,7 +325,7 @@ export default function PatientsView({ initialPatients, initialTotal }: Patients
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
       if (!data.success) {
         setDeleteError(data.error ?? "Delete failed");
         return;

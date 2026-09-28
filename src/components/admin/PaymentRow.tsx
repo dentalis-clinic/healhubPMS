@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { formatISTDateTime } from "@/lib/utils/date";
+import type { ApiJson } from "@/types/api";
 
 export interface PaymentEntry {
   id: string;
@@ -70,7 +71,7 @@ export function PaymentRow({ payment, onRefresh }: PaymentRowProps) {
           notes: draftNotes.trim() || null,
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
       if (!res.ok || !data.success) {
         setError(data.error ?? "Failed to save.");
         return;

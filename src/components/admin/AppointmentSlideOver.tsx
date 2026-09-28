@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import type { PatientMatch, DoctorRow } from "@/types/patient";
+import type { ApiJson } from "@/types/api";
 import { ConfirmationModal } from "./ConfirmationModal";
 
 export default function AppointmentSlideOver() {
@@ -69,7 +70,7 @@ export default function AppointmentSlideOver() {
     if (!open) return;
     setLoadingDoctors(true);
     fetch("/api/doctors")
-      .then((res) => res.json())
+      .then((res) => res.json() as Promise<ApiJson & { doctors: DoctorRow[] }>)
       .then((data) => {
         if (data.success) {
           setDoctors(data.doctors);
@@ -183,7 +184,7 @@ export default function AppointmentSlideOver() {
       fetch(`/api/patients/lookup?phone=${digits}`, {
         signal: controller.signal,
       })
-        .then((res) => res.json())
+        .then((res) => res.json() as Promise<ApiJson & { patients: PatientMatch[] }>)
         .then((data) => {
           if (!data.success) return;
           const patients: PatientMatch[] = data.patients;
@@ -306,7 +307,7 @@ export default function AppointmentSlideOver() {
         body: JSON.stringify(formPayload),
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & { appointmentId?: string };
 
       if (!res.ok || !data.success) {
         setError(data.error || "Something went wrong.");

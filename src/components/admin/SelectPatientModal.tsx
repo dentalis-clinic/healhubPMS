@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui";
+import type { ApiJson } from "@/types/api";
 
 interface PatientResult {
   id: string;
@@ -50,7 +51,7 @@ export default function SelectPatientModal({
       const params = new URLSearchParams({ limit: "50" });
       if (q) params.set("search", q);
       const res = await fetch(`/api/patients?${params}`);
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & { patients: PatientResult[]; total: number };
       if (data.success) {
         setPatients(data.patients);
         setTotal(data.total);

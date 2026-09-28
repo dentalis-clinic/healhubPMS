@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { DateTime } from "luxon";
 import { formatISTDateTime } from "@/lib/utils/date";
+import type { ApiJson } from "@/types/api";
 
 interface Summary {
   totalBilled: number;
@@ -92,7 +93,7 @@ export default function ReportsPage() {
     setError("");
     try {
       const res = await fetch(`/api/reports/payments?from=${fromDate}&to=${toDate}`);
-      const json = await res.json();
+      const json = (await res.json()) as ApiJson & ReportData;
       if (json.success) {
         setData(json);
       } else {

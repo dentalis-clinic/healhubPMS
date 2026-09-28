@@ -9,6 +9,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { DateTime } from "luxon";
 import { SlotButton } from "./SlotButton";
 import { SlotGridProps, TimeSlot } from "./types";
+import type { ApiJson } from "@/types/api";
 
 interface CachedAvailability {
   data: TimeSlot[];
@@ -63,7 +64,7 @@ export const SlotGrid: React.FC<SlotGridProps> = ({
         throw new Error("Failed to fetch availability");
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as ApiJson & { slots: TimeSlot[] };
 
       if (!data.success) {
         throw new Error(data.error || "Failed to fetch availability");

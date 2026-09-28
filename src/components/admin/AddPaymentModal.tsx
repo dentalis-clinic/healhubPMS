@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { formatISTDateTime } from "@/lib/utils/date";
+import type { ApiJson } from "@/types/api";
 
 interface OpenBill {
   appointmentId: string;
@@ -58,7 +59,7 @@ export function AddPaymentModal({
     setBillsLoading(true);
     setBillsError("");
     fetch(`/api/payments/open-bills?patientId=${patientId}`)
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<ApiJson & { openBills: OpenBill[] }>)
       .then((data) => {
         if (data.success) {
           setBills(data.openBills);
@@ -114,7 +115,7 @@ export function AddPaymentModal({
         }),
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson;
       if (!res.ok || !data.success) {
         setError(data.error ?? "Failed to record payment.");
         return;

@@ -5,6 +5,7 @@ import type { AppointmentRow } from "@/types/patient";
 import type { MedicationInput } from "@/lib/validations/prescription";
 import { prescriptionSchema } from "@/lib/validations/prescription";
 import { Button, Input, Textarea, FormField, Alert } from "@/components/ui";
+import type { ApiJson } from "@/types/api";
 
 interface PrescriptionFormProps {
   appointment: AppointmentRow;
@@ -98,7 +99,7 @@ export default function PrescriptionForm({
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as ApiJson & { prescriptionId: string };
 
       if (!res.ok) {
         setFormState({
