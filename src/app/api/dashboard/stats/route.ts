@@ -1,14 +1,7 @@
 import { NextResponse } from "next/server";
 import { DateTime } from "luxon";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
-
-interface StatsRow {
-  today_appointments: bigint;
-  pending_confirmations: bigint;
-  patients_seen_today: bigint;
-  total_patients: bigint;
-}
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET() {
   try {
@@ -21,26 +14,16 @@ export async function GET() {
     const tomorrowStart = now.plus({ days: 1 }).startOf("day").toJSDate();
     const clinicId = clinic.id;
 
-    const [stats] = await prisma.$queryRaw<StatsRow[]>`
-      SELECT
-        COUNT(*) FILTER (
-          WHERE "clinicId" = ${clinicId}
-            AND "preferredDateTime" >= ${todayStart}
-            AND "preferredDateTime" < ${tomorrowStart}
-        ) AS today_appointments,
-        COUNT(*) FILTER (
-          WHERE "clinicId" = ${clinicId}
-            AND status IN ('PENDING', 'OVERDUE')
-        ) AS pending_confirmations,
-        COUNT(*) FILTER (
-          WHERE "clinicId" = ${clinicId}
-            AND status = 'COMPLETED'
-            AND "preferredDateTime" >= ${todayStart}
-            AND "preferredDateTime" < ${tomorrowStart}
-        ) AS patients_seen_today,
-        (SELECT COUNT(*) FROM patients WHERE "clinicId" = ${clinicId}) AS total_patients
-      FROM appointments
-    `;
+    const supabase = createAdminClient();
+    const { data: stats, error } = await supabase
+      .rpc("get_dashboard_stats", {
+        p_clinic_id: clinicId,
+        p_today_start: todayStart.toISOString(),
+        p_tomorrow_start: tomorrowStart.toISOString(),
+      })
+      .single();
+
+    if (error) throw error;
 
     return NextResponse.json({
       success: true,

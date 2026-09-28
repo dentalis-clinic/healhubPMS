@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { bulkDeleteSchema } from "@/lib/validations/appointment";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -27,20 +27,13 @@ export async function DELETE(request: NextRequest) {
 
     const { ids } = parsed.data;
 
-    const deleted = await prisma.$transaction(async (tx) => {
-      // Verify all appointments belong to this clinic before deleting
-      const toDelete = await tx.appointment.findMany({
-        where: { clinicId: clinic.id, id: { in: ids } },
-        select: { id: true },
-      });
-      const safeIds = toDelete.map((a) => a.id);
-
-      if (safeIds.length === 0) return 0;
-
-      await tx.prescription.deleteMany({ where: { appointmentId: { in: safeIds } } });
-      const result = await tx.appointment.deleteMany({ where: { id: { in: safeIds } } });
-      return result.count;
+    const supabase = createAdminClient();
+    const { data: deleted, error } = await supabase.rpc("bulk_delete_appointments", {
+      p_clinic_id: clinic.id,
+      p_ids: ids,
     });
+
+    if (error) throw error;
 
     return NextResponse.json({ success: true, deleted });
   } catch (error) {

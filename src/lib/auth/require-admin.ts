@@ -1,22 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { User } from "@supabase/supabase-js";
+import type { Tables } from "@/generated/supabase/database.types";
 
-interface Admin {
-  id: string;
-  clinicId: string;
-  email: string;
-  name: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-interface Clinic {
-  id: string;
-  shortName: string;
-  timezone: string;
-}
+// Timestamps are ISO strings (PostgREST), not Date — no caller reads them today.
+type Admin = Pick<Tables<"admins">, "id" | "clinicId" | "email" | "name" | "createdAt" | "updatedAt">;
+type Clinic = Pick<Tables<"clinics">, "id" | "shortName" | "timezone">;
 
 type RequireAdminSuccess = { admin: Admin; clinic: Clinic; user: User; error: null };
 type RequireAdminError = { admin: null; clinic: null; user: null; error: NextResponse };
@@ -46,12 +36,16 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
     };
   }
 
-  const admin = await prisma.admin.findUnique({
-    where: { id: user.id },
-    include: { clinic: { select: { id: true, shortName: true, timezone: true } } },
-  });
+  // maybeSingle: zero rows → data null (403 below); real DB errors still throw → caller's 500.
+  const { data: row, error } = await createAdminClient()
+    .from("admins")
+    .select("id, clinicId, email, name, createdAt, updatedAt, clinic:clinics(id, shortName, timezone)")
+    .eq("id", user.id)
+    .maybeSingle();
 
-  if (!admin) {
+  if (error) throw error;
+
+  if (!row) {
     return {
       admin: null,
       clinic: null,
@@ -63,5 +57,6 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
     };
   }
 
-  return { admin, clinic: admin.clinic, user, error: null };
+  const { clinic, ...admin } = row;
+  return { admin, clinic, user, error: null };
 }

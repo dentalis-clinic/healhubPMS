@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { createFollowUpSchema } from "@/lib/validations/appointment";
 import { buildClinicSchedule } from "@/lib/utils/clinic-schedule";
-import { createAppointmentAtomic, SlotConflictError } from "@/lib/utils/slot-conflict";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isSlotConflict, slotConflictResponse, type NewAppointmentData } from "@/lib/supabase/rpc";
+import { utcIso } from "@/lib/supabase/serialize";
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,10 +18,13 @@ export async function POST(request: NextRequest) {
     const { user, clinic } = auth;
 
     const body = await request.json();
-    const clinicRow = await prisma.clinic.findUnique({
-      where: { id: clinic.id },
-      select: { timezone: true, businessHours: true, slotDuration: true },
-    });
+    const supabase = createAdminClient();
+    const { data: clinicRow, error: clinicRowError } = await supabase
+      .from("clinics")
+      .select("timezone, businessHours, slotDuration")
+      .eq("id", clinic.id)
+      .maybeSingle();
+    if (clinicRowError) throw clinicRowError;
     const scheduleConfig = buildClinicSchedule(clinicRow ?? { timezone: clinic.timezone, businessHours: null, slotDuration: null });
     const parsed = createFollowUpSchema(scheduleConfig).safeParse(body);
 
@@ -34,9 +38,13 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data;
 
-    const patient = await prisma.patient.findUnique({
-      where: { id: data.patientId, clinicId: clinic.id },
-    });
+    const { data: patient, error: patientError } = await supabase
+      .from("patients")
+      .select("id, patientId")
+      .eq("id", data.patientId)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (patientError) throw patientError;
 
     if (!patient) {
       return NextResponse.json(
@@ -45,39 +53,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const appointment = await createAppointmentAtomic(prisma, {
-      clinicId: clinic.id,
-      timezone: clinic.timezone,
-      data: {
-        patientId: patient.id,
-        type: "FOLLOW_UP",
-        bookingChannel: "WALK_IN",
-        visitType: "FOLLOW_UP",
-        status: "PENDING",
-        preferredDateTime: data.preferredDateTime,
-        reasonForVisit: data.reasonForVisit || null,
-        submittedBy: "ADMIN",
-        adminUserId: user.id,
-      },
+    const appointmentData: NewAppointmentData = {
+      patientId: patient.id,
+      type: "FOLLOW_UP",
+      bookingChannel: "WALK_IN",
+      visitType: "FOLLOW_UP",
+      status: "PENDING",
+      preferredDateTime: data.preferredDateTime.toISOString(),
+      reasonForVisit: data.reasonForVisit || null,
+      submittedBy: "ADMIN",
+      adminUserId: user.id,
+    };
+    const { data: appointment, error: rpcError } = await supabase.rpc("create_appointment_atomic", {
+      p_clinic_id: clinic.id,
+      p_timezone: clinic.timezone,
+      p_allow_override: false,
+      p_data: appointmentData,
     });
+    if (rpcError) {
+      if (isSlotConflict(rpcError)) return slotConflictResponse();
+      throw rpcError;
+    }
 
     return NextResponse.json(
       {
         success: true,
         patientId: patient.patientId,
         appointmentId: appointment.id,
-        preferredDateTime: appointment.preferredDateTime.toISOString(),
+        preferredDateTime: utcIso(appointment.preferredDateTime),
         message: "Follow-up appointment created.",
       },
       { status: 201 }
     );
   } catch (error) {
-    if (error instanceof SlotConflictError) {
-      return NextResponse.json(
-        { success: false, error: error.message, code: "SLOT_CONFLICT" },
-        { status: 409 }
-      );
-    }
     console.error("POST /api/appointments/follow-up error:", error);
     return NextResponse.json(
       { success: false, error: "An unexpected error occurred." },

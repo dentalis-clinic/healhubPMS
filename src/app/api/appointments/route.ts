@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  isSlotConflict,
+  slotConflictResponse,
+  type NewAppointmentData,
+  type PatientLookupData,
+} from "@/lib/supabase/rpc";
+import { utcIso } from "@/lib/supabase/serialize";
 import {
   createPublicBookingSchema,
   createWalkInSchema,
 } from "@/lib/validations/appointment";
 import { buildClinicSchedule } from "@/lib/utils/clinic-schedule";
 import { normalizePhoneNumber } from "@/lib/utils/phone";
-import { findOrCreatePatient } from "@/lib/utils/patient-id";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
-import { createAppointmentAtomic, SlotConflictError } from "@/lib/utils/slot-conflict";
 import { resolvePatientToken } from "@/lib/utils/patient-token";
 import { validateOrigin } from "@/lib/utils/csrf";
 import { getClinicContext } from "@/lib/utils/clinic-context";
@@ -25,13 +30,16 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as Record<string, unknown>;
 
-    const [clinicRow, supabase] = await Promise.all([
-      prisma.clinic.findUnique({
-        where: { id: clinic.clinicId },
-        select: { timezone: true, businessHours: true, slotDuration: true },
-      }),
+    const db = createAdminClient();
+    const [{ data: clinicRow, error: clinicRowError }, supabase] = await Promise.all([
+      db
+        .from("clinics")
+        .select("timezone, businessHours, slotDuration")
+        .eq("id", clinic.clinicId)
+        .maybeSingle(),
       createClient(),
     ]);
+    if (clinicRowError) throw clinicRowError;
     const scheduleConfig = buildClinicSchedule(clinicRow ?? { timezone: clinic.timezone, businessHours: null, slotDuration: null });
 
     const {
@@ -40,9 +48,13 @@ export async function POST(request: NextRequest) {
 
     let isAdminSubmission = false;
     if (user && body.submittedByAdmin === true) {
-      const admin = await prisma.admin.findUnique({
-        where: { id: user.id, clinicId: clinic.clinicId },
-      });
+      const { data: admin, error: adminError } = await db
+        .from("admins")
+        .select("id")
+        .eq("id", user.id)
+        .eq("clinicId", clinic.clinicId)
+        .maybeSingle();
+      if (adminError) throw adminError;
       isAdminSubmission = !!admin;
     }
 
@@ -100,10 +112,13 @@ export async function POST(request: NextRequest) {
         ? fullData.existingPatientId
         : resolvePatientToken(fullData.existingPatientId) ?? fullData.existingPatientId;
 
-      const existing = await prisma.patient.findUnique({
-        where: { id: resolvedId, clinicId: clinic.clinicId },
-        select: { id: true, patientId: true, phone: true },
-      });
+      const { data: existing, error: existingError } = await db
+        .from("patients")
+        .select("id, patientId, phone")
+        .eq("id", resolvedId)
+        .eq("clinicId", clinic.clinicId)
+        .maybeSingle();
+      if (existingError) throw existingError;
 
       if (!existing || existing.phone !== normalizedPhone) {
         return NextResponse.json(
@@ -116,15 +131,16 @@ export async function POST(request: NextRequest) {
       patientId = existing.patientId;
 
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-      const recentAppointment = await prisma.appointment.findFirst({
-        where: {
-          clinicId: clinic.clinicId,
-          createdAt: { gte: fiveMinutesAgo },
-          patientId: existing.id,
-        },
-      });
+      const { data: recentAppointments, error: recentError } = await db
+        .from("appointments")
+        .select("id")
+        .eq("clinicId", clinic.clinicId)
+        .eq("patientId", existing.id)
+        .gte("createdAt", fiveMinutesAgo.toISOString())
+        .limit(1);
+      if (recentError) throw recentError;
 
-      if (recentAppointment) {
+      if (recentAppointments.length > 0) {
         return NextResponse.json(
           {
             success: false,
@@ -143,17 +159,19 @@ export async function POST(request: NextRequest) {
       }
 
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-      const recentAppointment = await prisma.appointment.findFirst({
-        where: {
-          clinicId: clinic.clinicId,
-          createdAt: { gte: fiveMinutesAgo },
-          patient: {
-            phone: normalizedPhone,
-            name: { equals: data.name, mode: "insensitive" },
-          },
-        },
-        include: { patient: true },
-      });
+      // !inner makes the embedded-patient filter exclude parent rows (plain
+      // embeds only null out the child). Name is compared case-insensitively
+      // here rather than via ilike, which would treat % _ * in names as wildcards.
+      const { data: recentByPhone, error: recentError } = await db
+        .from("appointments")
+        .select("patient:patients!inner(patientId, name)")
+        .eq("clinicId", clinic.clinicId)
+        .eq("patient.phone", normalizedPhone)
+        .gte("createdAt", fiveMinutesAgo.toISOString());
+      if (recentError) throw recentError;
+
+      const nameLower = data.name.toLowerCase();
+      const recentAppointment = recentByPhone.find((a) => a.patient.name.toLowerCase() === nameLower);
 
       if (recentAppointment) {
         return NextResponse.json(
@@ -166,19 +184,24 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const result = await findOrCreatePatient(
-        prisma,
-        {
-          name: data.name,
-          phone: normalizedPhone,
-          email: fullData.email || null,
-          age: fullData.age ?? null,
-        },
-        { id: clinic.clinicId, shortName: clinic.shortName, timezone: clinic.timezone }
-      );
+      const lookup: PatientLookupData = {
+        name: data.name,
+        phone: normalizedPhone,
+        email: fullData.email || null,
+        age: fullData.age ?? null,
+      };
+      const { data: found, error: findError } = await db
+        .rpc("find_or_create_patient", {
+          p_clinic_id: clinic.clinicId,
+          p_clinic_short_name: clinic.shortName,
+          p_timezone: clinic.timezone,
+          p_data: lookup,
+        })
+        .single();
+      if (findError) throw findError;
 
-      patientId = result.patientId;
-      patient = result.patient;
+      patientId = found.patientId;
+      patient = { id: found.id, patientId: found.patientId };
     }
 
     const adminData = fullData as typeof fullData & {
@@ -194,28 +217,34 @@ export async function POST(request: NextRequest) {
     const visitType = adminData.visitType ?? "NEW_CONSULTATION";
     const priority = adminData.priority ?? null;
 
-    const appointment = await createAppointmentAtomic(prisma, {
-      clinicId: clinic.clinicId,
-      timezone: clinic.timezone,
-      data: {
-        patientId: patient.id,
-        bookingChannel,
-        visitType,
-        priority,
-        status: "PENDING",
-        preferredDateTime: data.preferredDateTime,
-        reasonForVisit: fullData.reasonForVisit || null,
-        submittedBy: isAdminSubmission ? "ADMIN" : "PATIENT",
-        adminUserId: isAdminSubmission ? user!.id : null,
-      },
+    const appointmentData: NewAppointmentData = {
+      patientId: patient.id,
+      bookingChannel,
+      visitType,
+      priority,
+      status: "PENDING",
+      preferredDateTime: data.preferredDateTime.toISOString(),
+      reasonForVisit: fullData.reasonForVisit || null,
+      submittedBy: isAdminSubmission ? "ADMIN" : "PATIENT",
+      adminUserId: isAdminSubmission ? user!.id : null,
+    };
+    const { data: appointment, error: rpcError } = await db.rpc("create_appointment_atomic", {
+      p_clinic_id: clinic.clinicId,
+      p_timezone: clinic.timezone,
+      p_allow_override: false,
+      p_data: appointmentData,
     });
+    if (rpcError) {
+      if (isSlotConflict(rpcError)) return slotConflictResponse();
+      throw rpcError;
+    }
 
     return NextResponse.json(
       {
         success: true,
         patientId,
         appointmentId: appointment.id,
-        preferredDateTime: appointment.preferredDateTime.toISOString(),
+        preferredDateTime: utcIso(appointment.preferredDateTime),
         message: isAdminSubmission
           ? "Walk-in appointment created."
           : "Your appointment has been tentatively booked.",
@@ -223,12 +252,6 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    if (error instanceof SlotConflictError) {
-      return NextResponse.json(
-        { success: false, error: error.message, code: "SLOT_CONFLICT" },
-        { status: 409 }
-      );
-    }
     console.error("POST /api/appointments error:", error);
     return NextResponse.json(
       { success: false, error: "An unexpected error occurred." },

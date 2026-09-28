@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { prescriptionSchema } from "@/lib/validations/prescription";
-import { createPrescriptionWithId } from "@/lib/utils/prescription-id";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { PG_UNIQUE_VIOLATION, type NewPrescriptionData } from "@/lib/supabase/rpc";
+import { dateOnlyIso, withUtcTimestamps } from "@/lib/supabase/serialize";
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,10 +29,14 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data;
 
-    const appointment = await prisma.appointment.findUnique({
-      where: { id: data.appointmentId, clinicId: clinic.id },
-      include: { prescription: true },
-    });
+    const supabase = createAdminClient();
+    const { data: appointment, error: appointmentError } = await supabase
+      .from("appointments")
+      .select("status, prescription:prescriptions(id)")
+      .eq("id", data.appointmentId)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (appointmentError) throw appointmentError;
 
     if (!appointment) {
       return NextResponse.json(
@@ -54,39 +59,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { prescriptionId, record } = await createPrescriptionWithId(prisma, {
-      clinicId: clinic.id,
-      timezone: clinic.timezone,
+    const prescriptionData: NewPrescriptionData = {
       appointmentId: data.appointmentId,
       diagnosis: data.diagnosis,
       medications: data.medications,
       treatmentPlan: data.treatmentPlan || null,
-      nextVisitDate: data.nextVisitDate || null,
+      nextVisitDate: data.nextVisitDate?.toISOString() ?? null,
       advice: data.advice || null,
       prescribedById: user.id,
+    };
+    const { data: record, error: rpcError } = await supabase.rpc("create_prescription_with_id", {
+      p_clinic_id: clinic.id,
+      p_timezone: clinic.timezone,
+      p_data: prescriptionData,
     });
+    if (rpcError) {
+      // prescriptions_appointmentId_key: lost a race with a concurrent create.
+      if (rpcError.code === PG_UNIQUE_VIOLATION) {
+        return NextResponse.json(
+          { success: false, error: "This appointment already has a prescription." },
+          { status: 409 }
+        );
+      }
+      throw rpcError;
+    }
 
     return NextResponse.json(
       {
         success: true,
-        prescriptionId,
-        prescription: record,
+        prescriptionId: record.prescriptionId,
+        prescription: { ...withUtcTimestamps(record), nextVisitDate: dateOnlyIso(record.nextVisitDate) },
         message: "Prescription created. Appointment confirmed.",
       },
       { status: 201 }
     );
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as { code: string }).code === "P2002"
-    ) {
-      return NextResponse.json(
-        { success: false, error: "This appointment already has a prescription." },
-        { status: 409 }
-      );
-    }
-
     console.error("POST /api/prescriptions error:", error);
     return NextResponse.json(
       { success: false, error: "An unexpected error occurred." },

@@ -17,7 +17,7 @@ export async function GET(
     const isRxId = id.startsWith("RX-");
     const prescription = await prisma.prescription.findUnique({
       where: isRxId
-        ? { prescriptionId: id, clinicId: clinic.id }
+        ? { clinicId_prescriptionId: { clinicId: clinic.id, prescriptionId: id } }
         : { id, clinicId: clinic.id },
       include: {
         appointment: { include: { patient: true } },

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { patchAppointmentSchema } from "@/lib/validations/appointment";
-import { updateAppointmentAtomic, SlotConflictError } from "@/lib/utils/slot-conflict";
 import { validateOrigin } from "@/lib/utils/csrf";
-import type { AppointmentStatus } from "@/generated/prisma/client";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isNotFound, isSlotConflict, slotConflictResponse, type AppointmentPatch } from "@/lib/supabase/rpc";
+import { dateOnlyIso, utcIso, withUtcTimestamps } from "@/lib/supabase/serialize";
+import type { Enums } from "@/generated/supabase/database.types";
+
+type AppointmentStatus = Enums<"AppointmentStatus">;
 
 /** Valid status transitions — terminal states have no outgoing edges. */
 const VALID_TRANSITIONS: Record<AppointmentStatus, AppointmentStatus[]> = {
@@ -31,10 +34,14 @@ export async function PATCH(
     if (auth.error) return auth.error;
     const { clinic } = auth;
 
-    const existing = await prisma.appointment.findUnique({
-      where: { id, clinicId: clinic.id },
-      include: { patient: true },
-    });
+    const supabase = createAdminClient();
+    const { data: existing, error: existingError } = await supabase
+      .from("appointments")
+      .select("status")
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (existingError) throw existingError;
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "Appointment not found" },
@@ -57,7 +64,7 @@ export async function PATCH(
 
     if (data.status) {
       const allowed = VALID_TRANSITIONS[existing.status];
-      if (!allowed.includes(data.status as AppointmentStatus)) {
+      if (!allowed.includes(data.status)) {
         return NextResponse.json(
           {
             success: false,
@@ -68,7 +75,7 @@ export async function PATCH(
       }
     }
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: AppointmentPatch = {};
     if (data.status !== undefined) updateData.status = data.status;
     if (data.bookingChannel !== undefined) updateData.bookingChannel = data.bookingChannel;
     if (data.visitType !== undefined) updateData.visitType = data.visitType;
@@ -79,50 +86,47 @@ export async function PATCH(
       updateData.reasonForVisit = data.reasonForVisit || null;
     if (data.notes !== undefined) updateData.notes = data.notes || null;
     if (data.preferredDateTime !== undefined)
-      updateData.preferredDateTime = data.preferredDateTime;
+      updateData.preferredDateTime = data.preferredDateTime.toISOString();
 
-    const newDateTime = data.preferredDateTime instanceof Date
-      ? data.preferredDateTime
-      : data.preferredDateTime
-        ? new Date(data.preferredDateTime as string)
-        : undefined;
-
-    const updated = await updateAppointmentAtomic(prisma, {
-      clinicId: clinic.id,
-      id,
-      data: updateData,
-      newPreferredDateTime: newDateTime,
+    // The RPC also runs the slot-conflict check when preferredDateTime is in the patch.
+    const { error: rpcError } = await supabase.rpc("update_appointment_atomic", {
+      p_clinic_id: clinic.id,
+      p_id: id,
+      p_data: updateData,
     });
+    if (rpcError) {
+      if (isSlotConflict(rpcError)) return slotConflictResponse();
+      if (isNotFound(rpcError)) {
+        return NextResponse.json(
+          { success: false, error: "Appointment not found" },
+          { status: 404 }
+        );
+      }
+      throw rpcError;
+    }
+
+    const { data: updated, error: updatedError } = await supabase
+      .from("appointments")
+      .select("*, patient:patients(*), prescription:prescriptions(*)")
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .single();
+    if (updatedError) throw updatedError;
 
     const appointment = {
-      ...updated,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-      preferredDateTime: updated.preferredDateTime.toISOString(),
-      patient: {
-        ...updated.patient,
-        createdAt: updated.patient.createdAt.toISOString(),
-        updatedAt: updated.patient.updatedAt.toISOString(),
-        age: updated.patient.age,
-      },
+      ...withUtcTimestamps(updated),
+      preferredDateTime: utcIso(updated.preferredDateTime),
+      patient: withUtcTimestamps(updated.patient),
       prescription: updated.prescription
         ? {
-            ...updated.prescription,
-            createdAt: updated.prescription.createdAt.toISOString(),
-            updatedAt: updated.prescription.updatedAt.toISOString(),
-            nextVisitDate: updated.prescription.nextVisitDate?.toISOString() ?? null,
+            ...withUtcTimestamps(updated.prescription),
+            nextVisitDate: dateOnlyIso(updated.prescription.nextVisitDate),
           }
         : null,
     };
 
     return NextResponse.json({ success: true, appointment });
   } catch (error) {
-    if (error instanceof SlotConflictError) {
-      return NextResponse.json(
-        { success: false, error: error.message, code: "SLOT_CONFLICT" },
-        { status: 409 }
-      );
-    }
     console.error("PATCH /api/appointments/[id] error:", error);
     return NextResponse.json(
       { success: false, error: "An unexpected error occurred." },

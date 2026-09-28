@@ -98,7 +98,7 @@ model Clinic {
 model Patient {
   id          String    @id @default(uuid())
   clinicId    String
-  patientId   String    @unique // DDCJ-YYYYMMDD-XXXX (generated once, permanent)
+  patientId   String    // {SHORTNAME}-YYYYMMDD-XXXX (generated once, permanent; unique per clinic)
   name        String
   phone       String    // 10-digit Indian mobile, normalized
   email       String?
@@ -111,6 +111,7 @@ model Patient {
   clinic       Clinic        @relation(fields: [clinicId], references: [id])
   appointments Appointment[]
 
+  @@unique([clinicId, patientId])
   @@index([clinicId])
   @@index([phone])
   @@index([patientId])
@@ -168,7 +169,7 @@ model Appointment {
 model Prescription {
   id             String    @id @default(uuid())
   clinicId       String
-  prescriptionId String    @unique // RX-YYYYMMDD-XXXX
+  prescriptionId String    // RX-YYYYMMDD-XXXX (unique per clinic)
   appointmentId  String    @unique // 1:1 with appointment
   diagnosis      String    @db.Text
   medications    Json      // [{drugName, dosage, frequency, duration}]
@@ -183,6 +184,7 @@ model Prescription {
   appointment  Appointment @relation(fields: [appointmentId], references: [id])
   prescribedBy Admin       @relation("prescriber", fields: [prescribedById], references: [id])
 
+  @@unique([clinicId, prescriptionId])
   @@index([clinicId])
   @@index([prescriptionId])
   @@map("prescriptions")
