@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const businessHoursSessionSchema = z.object({
   start: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:mm"),
@@ -31,30 +31,21 @@ const patchClinicSchema = z
   })
   .partial();
 
+const CLINIC_SETTINGS_COLUMNS =
+  "id, slug, name, shortName, timezone, address, phones, email, website, logo, businessHours, slotDuration, isActive";
+
 // GET — return current clinic settings
 export async function GET() {
   try {
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
 
-    const clinic = await prisma.clinic.findUnique({
-      where: { id: auth.clinic.id },
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        shortName: true,
-        timezone: true,
-        address: true,
-        phones: true,
-        email: true,
-        website: true,
-        logo: true,
-        businessHours: true,
-        slotDuration: true,
-        isActive: true,
-      },
-    });
+    const { data: clinic, error } = await createAdminClient()
+      .from("clinics")
+      .select(CLINIC_SETTINGS_COLUMNS)
+      .eq("id", auth.clinic.id)
+      .maybeSingle();
+    if (error) throw error;
 
     if (!clinic) {
       return NextResponse.json({ success: false, error: "Clinic not found" }, { status: 404 });
@@ -86,9 +77,12 @@ export async function PATCH(request: NextRequest) {
 
     const data = result.data;
 
-    const updated = await prisma.clinic.update({
-      where: { id: auth.clinic.id },
-      data: {
+    const { data: updated, error } = await createAdminClient()
+      .from("clinics")
+      .update({
+        // NOTE: `?? undefined` on a nullable field means "clear this field" is a
+        // no-op (undefined keys are dropped before the request is sent) — a
+        // pre-existing gap carried over unchanged from the Prisma version.
         ...(data.name !== undefined && { name: data.name }),
         ...(data.shortName !== undefined && { shortName: data.shortName }),
         ...(data.timezone !== undefined && { timezone: data.timezone }),
@@ -98,23 +92,12 @@ export async function PATCH(request: NextRequest) {
         ...(data.website !== undefined && { website: data.website }),
         ...(data.businessHours !== undefined && { businessHours: data.businessHours }),
         ...(data.slotDuration !== undefined && { slotDuration: data.slotDuration }),
-      },
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        shortName: true,
-        timezone: true,
-        address: true,
-        phones: true,
-        email: true,
-        website: true,
-        logo: true,
-        businessHours: true,
-        slotDuration: true,
-        isActive: true,
-      },
-    });
+        updatedAt: new Date().toISOString(),
+      })
+      .eq("id", auth.clinic.id)
+      .select(CLINIC_SETTINGS_COLUMNS)
+      .single();
+    if (error) throw error;
 
     return NextResponse.json({ success: true, clinic: updated });
   } catch {

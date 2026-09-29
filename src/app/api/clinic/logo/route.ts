@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -75,10 +74,11 @@ export async function POST(request: NextRequest) {
     // Append cache-buster so browsers don't serve the stale version after re-upload
     const logoUrl = `${urlData.publicUrl}?t=${Date.now()}`;
 
-    await prisma.clinic.update({
-      where: { id: auth.clinic.id },
-      data: { logo: logoUrl },
-    });
+    const { error: clinicError } = await supabase
+      .from("clinics")
+      .update({ logo: logoUrl, updatedAt: new Date().toISOString() })
+      .eq("id", auth.clinic.id);
+    if (clinicError) throw clinicError;
 
     return NextResponse.json({ success: true, logo: logoUrl });
   } catch {
@@ -102,10 +102,11 @@ export async function DELETE() {
       `${auth.clinic.id}/logo.svg`,
     ]);
 
-    await prisma.clinic.update({
-      where: { id: auth.clinic.id },
-      data: { logo: null },
-    });
+    const { error: clinicError } = await supabase
+      .from("clinics")
+      .update({ logo: null, updatedAt: new Date().toISOString() })
+      .eq("id", auth.clinic.id);
+    if (clinicError) throw clinicError;
 
     return NextResponse.json({ success: true });
   } catch {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { withUtcTimestamps } from "@/lib/supabase/serialize";
 import { z } from "zod/v4";
 
 const createSchema = z.object({
@@ -17,26 +18,16 @@ export async function GET() {
     if (auth.error) return auth.error;
     const { clinic } = auth;
 
-    const templates = await prisma.printable_templates.findMany({
-      where: { clinicId: clinic.id },
-      orderBy: { createdAt: "asc" },
-      select: {
-        id: true,
-        title: true,
-        templateType: true,
-        showPatientDetails: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const { data: templates, error } = await createAdminClient()
+      .from("printable_templates")
+      .select("id, title, templateType, showPatientDetails, createdAt, updatedAt")
+      .eq("clinicId", clinic.id)
+      .order("createdAt", { ascending: true });
+    if (error) throw error;
 
     return NextResponse.json({
       success: true,
-      templates: templates.map((t) => ({
-        ...t,
-        createdAt: t.createdAt.toISOString(),
-        updatedAt: t.updatedAt.toISOString(),
-      })),
+      templates: templates.map((t) => withUtcTimestamps(t)),
     });
   } catch (error) {
     console.error("GET /api/printable-templates error:", error);
@@ -63,18 +54,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const template = await prisma.printable_templates.create({
-      data: { clinicId: clinic.id, ...parsed.data },
-    });
+    const now = new Date().toISOString();
+    const { data: template, error } = await createAdminClient()
+      .from("printable_templates")
+      .insert({ id: crypto.randomUUID(), clinicId: clinic.id, ...parsed.data, updatedAt: now })
+      .select()
+      .single();
+    if (error) throw error;
 
-    return NextResponse.json({
-      success: true,
-      template: {
-        ...template,
-        createdAt: template.createdAt.toISOString(),
-        updatedAt: template.updatedAt.toISOString(),
-      },
-    });
+    return NextResponse.json({ success: true, template: withUtcTimestamps(template) });
   } catch (error) {
     console.error("POST /api/printable-templates error:", error);
     return NextResponse.json({ success: false, error: "Failed to create template" }, { status: 500 });

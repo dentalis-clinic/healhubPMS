@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { withUtcTimestamps } from "@/lib/supabase/serialize";
 import { z } from "zod/v4";
 
 export async function GET(
@@ -14,22 +15,19 @@ export async function GET(
     const { clinic } = auth;
 
     const { id } = await params;
-    const template = await prisma.printable_templates.findUnique({
-      where: { id, clinicId: clinic.id },
-    });
+    const { data: template, error } = await createAdminClient()
+      .from("printable_templates")
+      .select()
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (error) throw error;
 
     if (!template) {
       return NextResponse.json({ success: false, error: "Template not found" }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      template: {
-        ...template,
-        createdAt: template.createdAt.toISOString(),
-        updatedAt: template.updatedAt.toISOString(),
-      },
-    });
+    return NextResponse.json({ success: true, template: withUtcTimestamps(template) });
   } catch (error) {
     console.error("GET /api/printable-templates/[id] error:", error);
     return NextResponse.json({ success: false, error: "Failed to fetch template" }, { status: 500 });
@@ -56,10 +54,15 @@ export async function PATCH(
     const { clinic } = auth;
 
     const { id } = await params;
+    const supabase = createAdminClient();
 
-    const existing = await prisma.printable_templates.findUnique({
-      where: { id, clinicId: clinic.id },
-    });
+    const { data: existing, error: existingError } = await supabase
+      .from("printable_templates")
+      .select("id")
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (existingError) throw existingError;
     if (!existing) {
       return NextResponse.json({ success: false, error: "Template not found" }, { status: 404 });
     }
@@ -74,19 +77,16 @@ export async function PATCH(
       );
     }
 
-    const template = await prisma.printable_templates.update({
-      where: { id },
-      data: parsed.data,
-    });
+    const { data: template, error: updateError } = await supabase
+      .from("printable_templates")
+      .update({ ...parsed.data, updatedAt: new Date().toISOString() })
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .select()
+      .single();
+    if (updateError) throw updateError;
 
-    return NextResponse.json({
-      success: true,
-      template: {
-        ...template,
-        createdAt: template.createdAt.toISOString(),
-        updatedAt: template.updatedAt.toISOString(),
-      },
-    });
+    return NextResponse.json({ success: true, template: withUtcTimestamps(template) });
   } catch (error) {
     console.error("PATCH /api/printable-templates/[id] error:", error);
     return NextResponse.json({ success: false, error: "Failed to update template" }, { status: 500 });
@@ -106,15 +106,25 @@ export async function DELETE(
     const { clinic } = auth;
 
     const { id } = await params;
+    const supabase = createAdminClient();
 
-    const existing = await prisma.printable_templates.findUnique({
-      where: { id, clinicId: clinic.id },
-    });
+    const { data: existing, error: existingError } = await supabase
+      .from("printable_templates")
+      .select("id")
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (existingError) throw existingError;
     if (!existing) {
       return NextResponse.json({ success: false, error: "Template not found" }, { status: 404 });
     }
 
-    await prisma.printable_templates.delete({ where: { id } });
+    const { error: deleteError } = await supabase
+      .from("printable_templates")
+      .delete()
+      .eq("id", id)
+      .eq("clinicId", clinic.id);
+    if (deleteError) throw deleteError;
 
     return NextResponse.json({ success: true });
   } catch (error) {

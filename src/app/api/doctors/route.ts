@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { withUtcTimestamps } from "@/lib/supabase/serialize";
 
 const createDoctorSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(200),
@@ -19,24 +20,13 @@ export async function GET(request: NextRequest) {
     const includeInactive =
       request.nextUrl.searchParams.get("includeInactive") === "true";
 
-    const doctors = await prisma.doctor.findMany({
-      where: includeInactive
-        ? { clinicId: clinic.id }
-        : { clinicId: clinic.id, isActive: true },
-      orderBy: { createdAt: "asc" },
-    });
+    let query = createAdminClient().from("doctors").select().eq("clinicId", clinic.id);
+    if (!includeInactive) query = query.eq("isActive", true);
 
-    const serialized = doctors.map((d) => ({
-      id: d.id,
-      name: d.name,
-      qualifications: d.qualifications,
-      registrationNumber: d.registrationNumber,
-      isActive: d.isActive,
-      createdAt: d.createdAt.toISOString(),
-      updatedAt: d.updatedAt.toISOString(),
-    }));
+    const { data: doctors, error } = await query.order("createdAt", { ascending: true });
+    if (error) throw error;
 
-    return NextResponse.json({ success: true, doctors: serialized });
+    return NextResponse.json({ success: true, doctors: doctors.map((d) => withUtcTimestamps(d)) });
   } catch (error) {
     console.error("GET /api/doctors error:", error);
     return NextResponse.json(
@@ -68,27 +58,24 @@ export async function POST(request: NextRequest) {
 
     const { name, qualifications, registrationNumber } = parsed.data;
 
-    const doctor = await prisma.doctor.create({
-      data: {
+    const { data: doctor, error } = await createAdminClient()
+      .from("doctors")
+      .insert({
+        id: crypto.randomUUID(),
         clinicId: clinic.id,
         name,
         qualifications: qualifications || null,
         registrationNumber: registrationNumber || null,
-      },
-    });
+        updatedAt: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    if (error) throw error;
 
     return NextResponse.json(
       {
         success: true,
-        doctor: {
-          id: doctor.id,
-          name: doctor.name,
-          qualifications: doctor.qualifications,
-          registrationNumber: doctor.registrationNumber,
-          isActive: doctor.isActive,
-          createdAt: doctor.createdAt.toISOString(),
-          updatedAt: doctor.updatedAt.toISOString(),
-        },
+        doctor: withUtcTimestamps(doctor),
       },
       { status: 201 }
     );

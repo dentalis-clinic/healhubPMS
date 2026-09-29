@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { utcIso } from "@/lib/supabase/serialize";
+import type { TablesUpdate } from "@/generated/supabase/database.types";
 
 const updatePaymentSchema = z.object({
   amount: z.number().positive("Amount must be greater than 0").optional(),
@@ -34,19 +36,31 @@ export async function PATCH(
       );
     }
 
-    const payment = await prisma.payment.findUnique({ where: { id, clinicId: clinic.id } });
+    const supabase = createAdminClient();
+    const { data: payment, error: paymentError } = await supabase
+      .from("payments")
+      .select("id")
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (paymentError) throw paymentError;
     if (!payment) {
       return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
     }
 
-    const updated = await prisma.payment.update({
-      where: { id },
-      data: {
-        ...(parsed.data.amount !== undefined && { amount: parsed.data.amount }),
-        ...(parsed.data.method !== undefined && { method: parsed.data.method }),
-        ...(parsed.data.notes !== undefined && { notes: parsed.data.notes }),
-      },
-    });
+    const updateData: TablesUpdate<"payments"> = {};
+    if (parsed.data.amount !== undefined) updateData.amount = parsed.data.amount;
+    if (parsed.data.method !== undefined) updateData.method = parsed.data.method;
+    if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
+
+    const { data: updated, error: updateError } = await supabase
+      .from("payments")
+      .update(updateData)
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .select()
+      .single();
+    if (updateError) throw updateError;
 
     return NextResponse.json({
       success: true,
@@ -55,7 +69,7 @@ export async function PATCH(
         amount: Number(updated.amount),
         method: updated.method,
         notes: updated.notes,
-        paidAt: updated.paidAt.toISOString(),
+        paidAt: utcIso(updated.paidAt),
       },
     });
   } catch (error) {
@@ -80,13 +94,25 @@ export async function DELETE(
     const { clinic } = auth;
 
     const { id } = await params;
+    const supabase = createAdminClient();
 
-    const payment = await prisma.payment.findUnique({ where: { id, clinicId: clinic.id } });
+    const { data: payment, error: paymentError } = await supabase
+      .from("payments")
+      .select("id")
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (paymentError) throw paymentError;
     if (!payment) {
       return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
     }
 
-    await prisma.payment.delete({ where: { id } });
+    const { error: deleteError } = await supabase
+      .from("payments")
+      .delete()
+      .eq("id", id)
+      .eq("clinicId", clinic.id);
+    if (deleteError) throw deleteError;
 
     return NextResponse.json({ success: true });
   } catch (error) {

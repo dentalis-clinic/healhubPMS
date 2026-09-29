@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/env";
 
 export async function POST(
@@ -15,10 +15,20 @@ export async function POST(
 
     const auth = await requireAdmin();
     if (auth.error) return auth.error;
+    const { clinic } = auth;
 
     const { id } = await params;
 
-    const target = await prisma.admin.findUnique({ where: { id } });
+    // Pre-existing gap fixed during conversion: the Prisma version looked up
+    // `id` with no clinicId filter, letting any admin trigger a password-reset
+    // email for another clinic's admin.
+    const { data: target, error: targetError } = await createAdminClient()
+      .from("admins")
+      .select("email")
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (targetError) throw targetError;
     if (!target) {
       return NextResponse.json(
         { success: false, error: "Admin not found." },

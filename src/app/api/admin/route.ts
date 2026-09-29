@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
 import { createClient } from "@supabase/supabase-js";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { utcIso } from "@/lib/supabase/serialize";
 import { env } from "@/env";
 
 const createAdminSchema = z.object({
@@ -20,16 +21,18 @@ export async function GET() {
 
     const { clinic } = auth;
 
-    const admins = await prisma.admin.findMany({
-      where: { clinicId: clinic.id },
-      orderBy: { createdAt: "asc" },
-    });
+    const { data: admins, error } = await createAdminClient()
+      .from("admins")
+      .select("id, name, email, createdAt")
+      .eq("clinicId", clinic.id)
+      .order("createdAt", { ascending: true });
+    if (error) throw error;
 
     const serialized = admins.map((a) => ({
       id: a.id,
       name: a.name,
       email: a.email,
-      createdAt: a.createdAt.toISOString(),
+      createdAt: utcIso(a.createdAt),
     }));
 
     return NextResponse.json({ success: true, admins: serialized });
@@ -65,9 +68,15 @@ export async function POST(request: NextRequest) {
     }
 
     const { email, password, name } = parsed.data;
+    const supabaseTable = createAdminClient();
 
-    // Check if admin already exists
-    const duplicate = await prisma.admin.findUnique({ where: { email } });
+    // Check if admin already exists (email is globally unique — shared with Supabase auth)
+    const { data: duplicate, error: duplicateError } = await supabaseTable
+      .from("admins")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+    if (duplicateError) throw duplicateError;
     if (duplicate) {
       return NextResponse.json(
         { success: false, error: "An admin with this email already exists." },
@@ -98,32 +107,35 @@ export async function POST(request: NextRequest) {
     }
 
     // Create matching admin record in our database (same clinic as requesting admin)
-    try {
-      const admin = await prisma.admin.create({
-        data: {
-          id: authData.user.id,
-          clinicId: clinic.id,
-          email,
-          name,
-        },
-      });
+    const { data: admin, error: insertError } = await supabaseTable
+      .from("admins")
+      .insert({
+        id: authData.user.id,
+        clinicId: clinic.id,
+        email,
+        name,
+        updatedAt: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
-      return NextResponse.json(
-        {
-          success: true,
-          admin: { id: admin.id, email: admin.email, name: admin.name },
-        },
-        { status: 201 }
-      );
-    } catch (prismaError) {
+    if (insertError) {
       // Clean up: delete the orphaned Supabase auth user
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-      console.error("Prisma admin creation failed, cleaned up auth user:", prismaError);
+      console.error("Admin record creation failed, cleaned up auth user:", insertError);
       return NextResponse.json(
         { success: false, error: "Failed to create admin record." },
         { status: 500 }
       );
     }
+
+    return NextResponse.json(
+      {
+        success: true,
+        admin: { id: admin.id, email: admin.email, name: admin.name },
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("POST /api/admin error:", error);
     return NextResponse.json(

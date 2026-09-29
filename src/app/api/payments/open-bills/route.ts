@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { utcIso } from "@/lib/supabase/serialize";
 
 /**
  * GET /api/payments/open-bills?patientId=<uuid>
@@ -24,24 +25,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const appointments = await prisma.appointment.findMany({
-      where: {
-        clinicId: clinic.id,
-        patient: { id: patientId },
-        status: { not: "CANCELLED" },
-        totalAmount: { not: null },
-      },
-      select: {
-        id: true,
-        appointmentId: true,
-        preferredDateTime: true,
-        status: true,
-        totalAmount: true,
-        reasonForVisit: true,
-        payments: { select: { amount: true, method: true } },
-      },
-      orderBy: { preferredDateTime: "desc" },
-    });
+    const { data: appointments, error } = await createAdminClient()
+      .from("appointments")
+      .select("id, appointmentId, preferredDateTime, status, totalAmount, reasonForVisit, payments(amount, method)")
+      .eq("clinicId", clinic.id)
+      .eq("patientId", patientId)
+      .neq("status", "CANCELLED")
+      .not("totalAmount", "is", null)
+      .order("preferredDateTime", { ascending: false });
+    if (error) throw error;
 
     const openBills = appointments
       .map((apt) => {
@@ -52,7 +44,7 @@ export async function GET(request: NextRequest) {
         return {
           appointmentId: apt.id,
           appointmentRef: apt.appointmentId,
-          preferredDateTime: apt.preferredDateTime.toISOString(),
+          preferredDateTime: utcIso(apt.preferredDateTime),
           status: apt.status,
           amountDue,
           totalPaid: Math.round(totalPaid * 100) / 100,

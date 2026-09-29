@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { withUtcTimestamps } from "@/lib/supabase/serialize";
+import type { TablesUpdate } from "@/generated/supabase/database.types";
 
 const patchDoctorSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(200).optional(),
@@ -45,7 +47,14 @@ export async function PATCH(
       );
     }
 
-    const target = await prisma.doctor.findUnique({ where: { id, clinicId: clinic.id } });
+    const supabase = createAdminClient();
+    const { data: target, error: targetError } = await supabase
+      .from("doctors")
+      .select("id")
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (targetError) throw targetError;
     if (!target) {
       return NextResponse.json(
         { success: false, error: "Doctor not found." },
@@ -53,27 +62,24 @@ export async function PATCH(
       );
     }
 
-    const updated = await prisma.doctor.update({
-      where: { id },
-      data: {
-        ...(name && { name }),
-        ...(qualifications !== undefined && { qualifications: qualifications || null }),
-        ...(registrationNumber !== undefined && { registrationNumber: registrationNumber || null }),
-        ...(isActive !== undefined && { isActive }),
-      },
-    });
+    const updateData: TablesUpdate<"doctors"> = { updatedAt: new Date().toISOString() };
+    if (name) updateData.name = name;
+    if (qualifications !== undefined) updateData.qualifications = qualifications || null;
+    if (registrationNumber !== undefined) updateData.registrationNumber = registrationNumber || null;
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    const { data: updated, error: updateError } = await supabase
+      .from("doctors")
+      .update(updateData)
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .select()
+      .single();
+    if (updateError) throw updateError;
 
     return NextResponse.json({
       success: true,
-      doctor: {
-        id: updated.id,
-        name: updated.name,
-        qualifications: updated.qualifications,
-        registrationNumber: updated.registrationNumber,
-        isActive: updated.isActive,
-        createdAt: updated.createdAt.toISOString(),
-        updatedAt: updated.updatedAt.toISOString(),
-      },
+      doctor: withUtcTimestamps(updated),
     });
   } catch (error) {
     console.error("PATCH /api/doctors/[id] error:", error);
@@ -97,8 +103,15 @@ export async function DELETE(
     const { clinic } = auth;
 
     const { id } = await params;
+    const supabase = createAdminClient();
 
-    const target = await prisma.doctor.findUnique({ where: { id, clinicId: clinic.id } });
+    const { data: target, error: targetError } = await supabase
+      .from("doctors")
+      .select("id")
+      .eq("id", id)
+      .eq("clinicId", clinic.id)
+      .maybeSingle();
+    if (targetError) throw targetError;
     if (!target) {
       return NextResponse.json(
         { success: false, error: "Doctor not found." },
@@ -106,14 +119,27 @@ export async function DELETE(
       );
     }
 
-    const appointmentCount = await prisma.appointment.count({
-      where: { clinicId: clinic.id, doctorId: id },
-    });
+    const { count: appointmentCount, error: countError } = await supabase
+      .from("appointments")
+      .select("id", { count: "exact", head: true })
+      .eq("clinicId", clinic.id)
+      .eq("doctorId", id);
+    if (countError) throw countError;
 
-    if (appointmentCount > 0) {
-      await prisma.doctor.update({ where: { id }, data: { isActive: false } });
+    if (appointmentCount && appointmentCount > 0) {
+      const { error: deactivateError } = await supabase
+        .from("doctors")
+        .update({ isActive: false, updatedAt: new Date().toISOString() })
+        .eq("id", id)
+        .eq("clinicId", clinic.id);
+      if (deactivateError) throw deactivateError;
     } else {
-      await prisma.doctor.delete({ where: { id } });
+      const { error: deleteError } = await supabase
+        .from("doctors")
+        .delete()
+        .eq("id", id)
+        .eq("clinicId", clinic.id);
+      if (deleteError) throw deleteError;
     }
 
     return NextResponse.json({ success: true });
