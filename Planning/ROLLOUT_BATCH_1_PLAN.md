@@ -365,7 +365,7 @@ const { data, error } = await supabase
 5. `npx opennextjs-cloudflare build` still succeeds (regression check against Phase 3's fix).
 6. Confirm `slot-conflict.ts`/`patient-id.ts`/`prescription-id.ts` have zero remaining importers before deleting them.
 
-## Batch 2+ (not implemented in this plan — scoped for follow-up)
-- The 3 remaining inline-`$transaction` route files (`appointments/confirm`, `patients/[id]` DELETE, `patients` DELETE) — each needs its own bespoke RPC function, same shape as Phase 3's `bulk_delete_appointments`.
-- The remaining ~26 Category A simple-CRUD files, batched by domain area (admin, doctors, payments, prescriptions, templates, reports, page components) — mechanical once the `require-admin.ts` and relation-embedding conventions from this batch are established.
-- Per-file verification of PostgREST's FK-disambiguation syntax (`!fk_name`) for any table with multiple FKs to the same target — not yet hit in this batch, but likely to surface in later ones (e.g. `Appointment` has both `patientId` and, transitively via other tables, could have ambiguous embeds — check case by case).
+## Batch 2+ (superseded — see the live tracker)
+**Stale as of 2026-09-29.** This section was the original scope guess for "everything after Batch 1" and is now inaccurate (2a/2b/2c are done; 2d's remaining files include page/layout components and shared utils, not just "Category A" API routes). Don't plan from this list.
+
+**For current status and what's actually left, read `Planning/CLOUDFLARE_MIGRATION_PROGRESS.md` → "Batch 2 log"** — it has an entry per completed sub-batch (2a, 2b, 2c) with exactly what shipped, and the status table names what's next (2d).

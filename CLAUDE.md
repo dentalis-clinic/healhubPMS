@@ -12,11 +12,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | | SaaS product (this repo) | Original clinic (hands-off) |
 |---|---|---|
-| GitHub | `mohdshakeb/healhubPMS` | `dentalis-clinic/pms` |
+| GitHub | `dentalis-clinic/healhubPMS` | `dentalis-clinic/pms` |
 | Supabase | `apuxomkxwtjcoaqjhlux` (ap-northeast-2) | `erezwhfjexvnvxqaihae` (ap-southeast-1) |
 | Vercel | New project (link via `vercel` CLI when ready) | `prj_iFvzmznya185EqJeL99DZhtTBLsE` |
 
 **Privacy commitment:** We never sell or share patient data. Data isolation between tenants is enforced at the application layer (`clinicId` filtering), with Supabase RLS as a future hardening step.
+
+### Active work: Cloudflare migration (branch `cloudflare-migration`)
+
+The app is being moved from Vercel to Cloudflare Workers, and the data layer from Prisma to `@supabase/supabase-js` + Postgres RPCs, in this order because the two are entangled (see `Planning/CLOUDFLARE_MIGRATION_PROGRESS.md` for why). **This work lives entirely on the `cloudflare-migration` git branch — not on `main`.** If you're reading this file from a `main` checkout, none of it applies yet; check out `cloudflare-migration` first (`git log main...cloudflare-migration` shows what's ahead).
+
+- **Status + exact resume point:** `Planning/CLOUDFLARE_MIGRATION_PROGRESS.md` (status table + "Batch 2 log")
+- **Coding conventions for converted routes** (id/updatedAt generation, RPC error mapping, timestamp serialization, etc.): `src/CONTEXT.md` → "Patterns to Follow"
+- Every live-DB migration in this effort was dry-run in `BEGIN…ROLLBACK` and applied only with explicit user approval — keep doing that.
 
 ## SaaS Roadmap
 
@@ -201,3 +209,13 @@ CRON_SECRET                     — Secret for Vercel cron job authorization
 ```
 
 > Both `.env` and `.env.local` must point to the SaaS Supabase project. `.env` is loaded by Prisma (via `prisma.config.ts` → `dotenv/config`). `.env.local` is loaded by Next.js. Keep them in sync.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
