@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |---|---|---|
 | GitHub | `dentalis-clinic/healhubPMS` | `dentalis-clinic/pms` |
 | Supabase | `apuxomkxwtjcoaqjhlux` (ap-northeast-2) | `erezwhfjexvnvxqaihae` (ap-southeast-1) |
-| Vercel | New project (link via `vercel` CLI when ready) | `prj_iFvzmznya185EqJeL99DZhtTBLsE` |
+| Hosting | Cloudflare Workers `dentalis-pms` via OpenNext (not yet deployed) | Vercel `prj_iFvzmznya185EqJeL99DZhtTBLsE` |
 
 **Privacy commitment:** We never sell or share patient data. Data isolation between tenants is enforced at the application layer (`clinicId` filtering), with Supabase RLS as a future hardening step.
 
@@ -36,11 +36,11 @@ The prerequisite for everything SaaS. Nothing else starts until this is complete
 - Add `Clinic` model: `slug`, `name`, `shortName` (patient ID prefix), `timezone`, `address`, `phones`, `email`, `logo`, `isActive`
 - Add `clinicId` FK to every table: `patients`, `appointments`, `doctors`, `payments`, `prescriptions`, `printable_templates`, `admins`
 - Migrate DDCJ config from `src/lib/config/clinic.ts` (static file) into a `Clinic` DB row
-- Subdomain routing: `ddcj.healthhub.app`, `newclinic.healthhub.app` → Vercel wildcard domain
+- Subdomain routing: `ddcj.healthhub.app`, `newclinic.healthhub.app` → Cloudflare wildcard route `*.healthhub.app`
 - Middleware reads subdomain → looks up `Clinic` by slug → injects `clinicId` into all request contexts
 - Replace all hardcoded `Asia/Kolkata` (25+ files) with `clinic.timezone` from DB
 - Replace hardcoded `DDCJ` prefix with `clinic.shortName` from DB
-- All Prisma queries filter by `clinicId` — never return cross-clinic data
+- All data queries (supabase-js `.eq("clinicId", …)` or RPC `p_clinic_id`) filter by `clinicId` — never return cross-clinic data
 - Data isolation: app-layer filtering now; Supabase RLS is a future hardening step
 
 ### Phase 3 — Clinic Onboarding
@@ -68,14 +68,14 @@ The prerequisite for everything SaaS. Nothing else starts until this is complete
 
 - **Framework:** Next.js 16 with App Router
 - **Language:** TypeScript (strict)
-- **Database:** Supabase PostgreSQL with Prisma ORM (v7, @prisma/adapter-pg)
+- **Database:** Supabase PostgreSQL — app data via `@supabase/supabase-js` (typed); Prisma CLI for schema + migrations only
 - **Auth:** Supabase Auth (`@supabase/supabase-js` + `@supabase/ssr`) — email/password for admin. Future: OTP for patient portal.
 - **Styling:** Tailwind CSS v4
 - **Validation:** Zod v4 (shared schemas for client + server)
 - **Date/Time:** Luxon — all timezone operations must use `clinic.timezone` from DB (currently `Asia/Kolkata` while Phase 2 is pending)
 - **CSV Export:** json2csv library
-- **Deployment:** Vercel (app) + Supabase (database + auth)
-- **Rate Limiting:** Upstash Redis (serverless-compatible) or Vercel KV
+- **Deployment:** Cloudflare Workers via OpenNext (app) + Supabase (database + auth + storage)
+- **Rate Limiting:** Upstash Redis (in-memory fallback in dev)
 
 ## Token Efficiency
 - Never re-read files you just wrote or edited. You know the contents.
@@ -92,12 +92,11 @@ The prerequisite for everything SaaS. Nothing else starts until this is complete
 - Use Luxon for all date/time operations — use `clinic.timezone` (Phase 2+) or `'Asia/Kolkata'` (Phase 1 compatibility)
 
 ## Database
-- Prisma ORM with PostgreSQL via @prisma/adapter-pg + pg driver
+- App data access is `@supabase/supabase-js` with the service-role client from `src/lib/supabase/admin.ts`, typed against `src/generated/supabase/database.types.ts` (regenerate with `npm run db:types` after every migration)
+- Multi-step writes (anything transactional) go in Postgres RPC functions defined in `prisma/migrations/`, not in app code
+- Prisma is the schema and migration tool only (`prisma/schema.prisma`, `prisma migrate deploy`); there is no Prisma client in the app
+- Connection: `DIRECT_URL` (session pooler, port 5432) is used by the Prisma CLI and `db:types`
 - Supabase PostgreSQL with connection pooling (Supavisor)
-- Two connection strings: `DATABASE_URL` (transaction pooler, port 6543) and `DIRECT_URL` (session pooler, port 5432)
-- Schema at `prisma/schema.prisma`
-- Generated client outputs to `src/generated/prisma/`
-- Database client singleton in `src/lib/prisma.ts`
 - Model names should always be plural, lowercase and snake_case. Never use CamelCase.
 - **Known schema drift:** The migration history has gaps — some columns and tables (`appointmentId`, `doctorId`, `doctors`, `printable_templates`, `patients.age`, `patients.address`) were added to the original DB via `db push` without migrations. The new SaaS DB was synced via `prisma migrate deploy` + `prisma db push`. When Phase 2 migrations are written, generate them cleanly from the current `schema.prisma` state.
 
@@ -115,7 +114,7 @@ The prerequisite for everything SaaS. Nothing else starts until this is complete
 - Client vars: must use `NEXT_PUBLIC_` prefix (Next.js convention)
 - Validated at startup via Zod schemas in `src/env.ts`
 - Import as `import { env } from "@/env"`
-- Both `.env` (used by Prisma/dotenv) and `.env.local` (used by Next.js) must be kept in sync — both point to the SaaS Supabase project (`apuxomkxwtjcoaqjhlux`)
+- Both `.env` (used by the Prisma CLI, `db:types` and scripts via dotenv) and `.env.local` (used by Next.js) must be kept in sync — both point to the SaaS Supabase project (`apuxomkxwtjcoaqjhlux`)
 
 ## Commands
 
@@ -129,7 +128,7 @@ npx tsc --noEmit     # Type-check without emitting
 # Database
 npx prisma migrate dev --name <name>   # Create and apply migration
 npx prisma db push                      # Push schema to DB (prototyping only — avoid drift)
-npx prisma generate                     # Regenerate Prisma client
+npm run db:types                        # Regenerate Supabase DB types (after migrations)
 npx prisma studio                       # Visual DB browser
 
 # Seed
@@ -167,9 +166,8 @@ middleware.ts                        — Supabase session refresh + protect /adm
 
 Format: `{CLINIC_PREFIX}-YYYYMMDD-XXXX` where prefix comes from `clinic.shortName` (e.g. `DDCJ`), date is in clinic's local timezone, and XXXX is a zero-padded daily serial.
 
-- Generated inside a Prisma `$transaction()` with serializable isolation to prevent race conditions
-- Currently uses hardcoded `Asia/Kolkata` — Phase 2 will pass `clinic.timezone` dynamically
-- On unique constraint violation, retry up to 3 times with incremented serial
+- Generated inside the `find_or_create_patient` / `create_appointment_atomic` / `create_prescription_with_id` RPCs, under a per-clinic advisory lock (`pg_advisory_xact_lock`), using `MAX(serial)+1`
+- Timezone is passed in from `clinic.timezone`; IDs are unique per clinic, not globally
 
 ### Phone Number Normalization
 
@@ -178,7 +176,7 @@ Strip non-digits → if 12 digits starting with `91`, drop the `91` → validate
 ## Multi-Tenancy Design Notes (for Phase 2)
 
 - **Tenant resolution:** subdomain → `Clinic.slug` lookup in middleware → `clinicId` injected into request headers
-- **Data isolation strategy:** app-layer `WHERE clinicId = ?` on every Prisma query. Supabase RLS is a future hardening step (before 20 clinics).
+- **Data isolation strategy:** app-layer `clinicId` filtering on every query and RPC. Supabase RLS is a future hardening step (before 20 clinics).
 - **Patient ID prefix:** `clinic.shortName` replaces the hardcoded `DDCJ` constant in `src/lib/utils/patient-id.ts`
 - **Timezone:** `clinic.timezone` replaces all hardcoded `'Asia/Kolkata'` strings. The constant `IST_ZONE` in `src/lib/utils/date.ts` should become a clinic config lookup.
 - **Clinic config file:** `src/lib/config/clinic.ts` is Phase 1 only — delete it in Phase 2 when config moves to DB.
@@ -198,17 +196,15 @@ Strip non-digits → if 12 digits starting with `91`, drop the `91` → validate
 NEXT_PUBLIC_SUPABASE_URL        — Supabase project URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY   — Supabase publishable/anon key (safe for client-side)
 SUPABASE_SERVICE_ROLE_KEY       — Supabase secret/service role key (server-only)
-DATABASE_URL                    — Transaction pooler (port 6543) with ?pgbouncer=true&connection_limit=1
-DIRECT_URL                      — Session pooler (port 5432) for migrations
+DIRECT_URL                      — Session pooler (port 5432) for Prisma CLI migrations and db:types
 TZ                              — Asia/Kolkata
 RATE_LIMIT_MAX                  — Max submissions per window (default 3)
 RATE_LIMIT_WINDOW_MS            — Rate limit window in ms (default 3600000)
 UPSTASH_REDIS_URL               — (optional) Upstash Redis for rate limiting
 UPSTASH_REDIS_TOKEN             — (optional) Upstash Redis token
-CRON_SECRET                     — Secret for Vercel cron job authorization
 ```
 
-> Both `.env` and `.env.local` must point to the SaaS Supabase project. `.env` is loaded by Prisma (via `prisma.config.ts` → `dotenv/config`). `.env.local` is loaded by Next.js. Keep them in sync.
+> Both `.env` and `.env.local` must point to the SaaS Supabase project. `.env` is loaded by the Prisma CLI (via `prisma.config.ts` → `dotenv/config`) and the scripts. `.env.local` is loaded by Next.js. Keep them in sync.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

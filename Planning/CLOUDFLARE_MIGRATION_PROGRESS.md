@@ -15,7 +15,7 @@ Living document. Update this whenever a phase starts, finishes, or changes shape
 | DNS / Cloudflare account signup | ⬜ Deliberately deferred | User's choice: do this once code is ready to deploy |
 | Secrets (`wrangler secret put`) | ⬜ Not started | Needs the account from the step above |
 | Deploy & smoke test | ⬜ Not started | |
-| Cleanup (dead config, docs) | ⬜ Not started | |
+| Cleanup (dead config, docs) | ✅ Done (2026-10-04) | Prisma runtime + `pg`/`pg-cloudflare` removed; Hyperdrive, tracing workaround, `vercel.json`, `config/clinic.ts`, `CRON_SECRET`/`DATABASE_URL` removed; docs rewritten for Cloudflare. Bundle 4.24 → 2.33 MB gzip. See cleanup log below |
 
 ---
 
@@ -117,6 +117,15 @@ Only once **all 41 files** are converted (a future phase, not yet started) do Hy
 - **Remaining, out of app runtime**: `scripts/seed-admin.ts` and `scripts/normalize-patient-names.ts` still use Prisma directly. Local maintenance scripts; convert or remove in cleanup.
 - Verified: authenticated E2E **46/46** against a production build (`next build && next start`, `DEFAULT_CLINIC_SLUG` set). Pages checked via rendered HTML. Test data and auth sessions cleaned up. `tsc`, eslint (0 errors), `opennextjs-cloudflare build` ✅.
 - Test-run lessons: the public `phone-check` rate limit (10/hour/IP, in-memory) is consumed by repeated test runs — restart the server to reset. `next dev` ignores `DEFAULT_CLINIC_SLUG` (already noted in Batch 1), so public routes need the production build.
+
+## Cleanup log (2026-10-04)
+
+- **Removed**: `@prisma/client`, `@prisma/adapter-pg`, `pg`, `pg-cloudflare` (npm uninstall); `generator client` block from `schema.prisma` (CLI remains for migrations); `postinstall: prisma generate`; `src/generated/prisma/`; `outputFileTracingIncludes` workaround in `next.config.ts`; the Hyperdrive binding in `wrangler.jsonc`; `vercel.json` (was `{}`); `src/lib/config/clinic.ts` (no importers); `DATABASE_URL`, `DIRECT_URL`, `CRON_SECRET` from `src/env.ts` (nothing reads them at runtime).
+- **Kept on purpose**: `prisma` CLI (migrations are the schema tool of record), `prisma.config.ts`, `DIRECT_URL` in `.env` for the CLI and `db:types`.
+- **Scripts converted to supabase-js**: `scripts/seed-admin.ts` (now takes `SEED_CLINIC_SLUG`, default `ddcj`; the old error message wrongly told people to run migrations) and `scripts/normalize-patient-names.ts` (pages through all patients, since PostgREST caps responses at 1000 rows).
+- **Verified**: `tsc` clean; lint 0 errors; `next build` ✅; `opennextjs-cloudflare build` ✅ without the `pg-cloudflare` workaround; `wrangler deploy --dry-run` 11.5 MB raw / **2.33 MB gzip** (free plan limit 3 MB; was 4.24 MB); Batch 2d E2E **46/46** on the rebuilt production server; seed-admin lookup path exits cleanly on a missing clinic.
+- **Not verified live**: seed-admin's insert path (would create a real admin) and normalize-patient-names (mutates real patient names). Both are one-off operator scripts; run them deliberately.
+- **Still to do before deploy**: Cloudflare account + DNS, `wrangler secret put` (service role key, Upstash), smoke test.
 
 ## Corrections to earlier notes in this file
 

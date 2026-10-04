@@ -1,7 +1,5 @@
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
-import { PrismaClient } from "../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -17,11 +15,6 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL,
-});
-const prisma = new PrismaClient({ adapter });
-
 async function main() {
   const email = process.env.SEED_ADMIN_EMAIL || "admin@dentalis.com";
   const password = process.env.SEED_ADMIN_PASSWORD;
@@ -35,15 +28,27 @@ async function main() {
     process.exit(1);
   }
 
-  // Look up the DDCJ clinic (seeded by migration)
-  const clinic = await prisma.clinic.findUnique({ where: { slug: "ddcj" } });
+  // The first admin must belong to an existing clinic. Create the clinic first
+  // (via /register, or a row in `clinics`), then pass its slug here.
+  const clinicSlug = process.env.SEED_CLINIC_SLUG || "ddcj";
+  const { data: clinic, error: clinicError } = await supabase
+    .from("clinics")
+    .select("id")
+    .eq("slug", clinicSlug)
+    .maybeSingle();
+  if (clinicError) throw clinicError;
   if (!clinic) {
-    console.error("DDCJ clinic not found. Run `npx prisma migrate deploy` first.");
+    console.error(`No clinic with slug "${clinicSlug}". Create it first, or set SEED_CLINIC_SLUG.`);
     process.exit(1);
   }
 
   // Check if admin already exists in our table
-  const existing = await prisma.admin.findUnique({ where: { email } });
+  const { data: existing, error: existingError } = await supabase
+    .from("admins")
+    .select("id")
+    .eq("email", email)
+    .maybeSingle();
+  if (existingError) throw existingError;
   if (existing) {
     console.log(`Admin with email "${email}" already exists. Skipping.`);
     return;
@@ -72,14 +77,18 @@ async function main() {
   }
 
   // Create matching admin record in our database
-  const admin = await prisma.admin.create({
-    data: {
+  const { data: admin, error: insertError } = await supabase
+    .from("admins")
+    .insert({
       id: userId, // Same UUID as Supabase auth.users
       clinicId: clinic.id,
       email,
       name,
-    },
-  });
+      updatedAt: new Date().toISOString(),
+    })
+    .select("id, email, name")
+    .single();
+  if (insertError) throw insertError;
 
   console.log(`Admin created successfully:`);
   console.log(`  ID:    ${admin.id}`);
@@ -90,9 +99,7 @@ async function main() {
   );
 }
 
-main()
-  .catch((e) => {
-    console.error("Failed to seed admin:", e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+main().catch((e) => {
+  console.error("Failed to seed admin:", e);
+  process.exit(1);
+});

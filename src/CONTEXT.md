@@ -48,7 +48,7 @@ src/
 │   └── validations/                     — Zod schemas (shared client + server)
 ├── types/                               — TypeScript type definitions
 ├── env.ts                               — Zod-validated env vars (import as @/env)
-├── generated/prisma/                    — Prisma generated client (used only by scripts/ — not the app; gitignored)
+├── generated/supabase/                  — Supabase DB types (committed; regenerate with `npm run db:types`)
 └── generated/supabase/                  — Supabase DB types (do not edit; COMMITTED — regenerate with `npm run db:types` after every migration)
 ```
 

@@ -12,23 +12,8 @@
     "binding": "ASSETS"
   },
 
-  // Hyperdrive connection pooling in front of Supabase Postgres.
-  // The "id" below is a PLACEHOLDER — wrangler dev/preview/deploy will not
-  // work until it's replaced. To get a real one (a later phase, requires a
-  // Cloudflare account/login that's intentionally not set up yet):
-  //   1. wrangler login
-  //   2. wrangler hyperdrive create dentalis-pms-db --connection-string="<Supabase DIRECT_URL>"
-  //   3. Replace REPLACE_WITH_HYPERDRIVE_ID with the id it prints.
-  "hyperdrive": [
-    {
-      "binding": "HYPERDRIVE",
-      "id": "REPLACE_WITH_HYPERDRIVE_ID"
-    }
-  ],
-
   // Non-secret runtime vars. Secrets (SUPABASE_SERVICE_ROLE_KEY,
-  // NEXT_PUBLIC_SUPABASE_ANON_KEY, DATABASE_URL, DIRECT_URL,
-  // UPSTASH_REDIS_URL, UPSTASH_REDIS_TOKEN, CRON_SECRET) are NOT set here —
+  // UPSTASH_REDIS_URL, UPSTASH_REDIS_TOKEN) are NOT set here —
   // they're set later via `wrangler secret put <NAME>`.
   //
   // DEFAULT_CLINIC_SLUG is intentionally NOT set here — it must stay unset

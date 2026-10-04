@@ -5,13 +5,8 @@ import { z } from "zod/v4";
  * These are NOT exposed to the browser.
  */
 const serverSchema = z.object({
-  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  DIRECT_URL: z.string().min(1, "DIRECT_URL is required"),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, "SUPABASE_SERVICE_ROLE_KEY is required"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-
-  // Cron job secret (Vercel sends this as Authorization: Bearer <secret>)
-  CRON_SECRET: z.string().optional(),
 
   // Optional rate limiting
   UPSTASH_REDIS_URL: z.string().optional(),
