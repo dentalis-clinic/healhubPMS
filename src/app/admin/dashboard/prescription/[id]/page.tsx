@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/admin";
 import PrescriptionView from "@/components/PrescriptionView";
 import type { Medication } from "@/types/patient";
 import { getClinicForPage } from "@/lib/utils/get-clinic-for-page";
+import { dateOnlyIso, utcIso } from "@/lib/supabase/serialize";
 
 export const dynamic = "force-dynamic";
 
@@ -19,17 +20,17 @@ export default async function PrescriptionPage({
   const clinic = await getClinicForPage();
   if (!clinic) notFound();
 
-  const prescription = await prisma.prescription.findFirst({
-    where: isRxId
-      ? { prescriptionId: id, clinicId: clinic.id }
-      : { id, clinicId: clinic.id },
-    include: {
-      appointment: {
-        include: { patient: true },
-      },
-      prescribedBy: { select: { id: true, name: true, email: true } },
-    },
-  });
+  const supabase = createAdminClient();
+  let query = supabase
+    .from("prescriptions")
+    .select(
+      "prescriptionId, diagnosis, medications, treatmentPlan, nextVisitDate, advice, createdAt, prescribedBy:admins(name), appointment:appointments(preferredDateTime, patient:patients(*))"
+    )
+    .eq("clinicId", clinic.id);
+  query = isRxId ? query.eq("prescriptionId", id) : query.eq("id", id);
+
+  const { data: prescription, error } = await query.maybeSingle();
+  if (error) throw error;
 
   if (!prescription) {
     notFound();
@@ -41,13 +42,12 @@ export default async function PrescriptionPage({
     diagnosis: prescription.diagnosis,
     medications: prescription.medications as unknown as Medication[],
     treatmentPlan: prescription.treatmentPlan,
-    nextVisitDate: prescription.nextVisitDate?.toISOString() ?? null,
+    nextVisitDate: dateOnlyIso(prescription.nextVisitDate),
     advice: prescription.advice,
-    createdAt: prescription.createdAt.toISOString(),
+    createdAt: utcIso(prescription.createdAt),
     prescribedBy: { name: prescription.prescribedBy.name },
     appointment: {
-      preferredDateTime:
-        prescription.appointment.preferredDateTime.toISOString(),
+      preferredDateTime: utcIso(prescription.appointment.preferredDateTime),
       patient: {
         patientId: prescription.appointment.patient.patientId,
         name: prescription.appointment.patient.name,

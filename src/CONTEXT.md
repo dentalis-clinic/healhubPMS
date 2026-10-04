@@ -48,7 +48,7 @@ src/
 │   └── validations/                     — Zod schemas (shared client + server)
 ├── types/                               — TypeScript type definitions
 ├── env.ts                               — Zod-validated env vars (import as @/env)
-├── generated/prisma/                    — Prisma generated client (do not edit; gitignored, rebuilt on postinstall)
+├── generated/prisma/                    — Prisma generated client (used only by scripts/ — not the app; gitignored)
 └── generated/supabase/                  — Supabase DB types (do not edit; COMMITTED — regenerate with `npm run db:types` after every migration)
 ```
 
@@ -105,7 +105,7 @@ src/
 
 ## Key Libraries
 
-- `@prisma/client` + `@prisma/adapter-pg` — ORM with pg driver for Supavisor pooling
+- `@supabase/supabase-js` — all app data access (typed via `src/generated/supabase/database.types.ts`). Prisma remains only for schema/migrations and two local scripts in `scripts/`.
 - `@supabase/supabase-js` + `@supabase/ssr` — Auth (server + browser clients)
 - `luxon` — All date/time operations
 - `zod` v4 — Schema validation (shared client/server)

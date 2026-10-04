@@ -1,10 +1,10 @@
-import type {
-  AppointmentStatus,
-  AppointmentType,
-  BookingChannel,
-  VisitType,
-  AppointmentPriority,
-} from "@/generated/prisma/client";
+import type { Enums } from "@/generated/supabase/database.types";
+
+type AppointmentStatus = Enums<"AppointmentStatus">;
+type AppointmentType = Enums<"AppointmentType">;
+type BookingChannel = Enums<"BookingChannel">;
+type VisitType = Enums<"VisitType">;
+type AppointmentPriority = Enums<"AppointmentPriority">;
 
 // Status badges (updated with PENDING and OVERDUE)
 export const STATUS_BADGE: Record<

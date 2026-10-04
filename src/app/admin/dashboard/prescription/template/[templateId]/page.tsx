@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/admin";
 import CustomTemplateView from "@/components/CustomTemplateView";
 import SurveyTemplateView from "@/components/SurveyTemplateView";
 import type { PatientInfo } from "@/components/BlankLetterheadTemplate";
@@ -17,18 +17,25 @@ export default async function CustomTemplatePrintPage({ params, searchParams }: 
   const clinic = await getClinicForPage();
   if (!clinic) notFound();
 
-  const [template, foundPatient] = await Promise.all([
-    prisma.printable_templates.findFirst({
-      where: { id: templateId, clinicId: clinic.id },
-      select: { title: true, templateType: true, showPatientDetails: true, content: true },
-    }),
+  const supabase = createAdminClient();
+  const [{ data: template, error: templateError }, { data: foundPatient, error: patientError }] = await Promise.all([
+    supabase
+      .from("printable_templates")
+      .select("title, templateType, showPatientDetails, content")
+      .eq("id", templateId)
+      .eq("clinicId", clinic.id)
+      .maybeSingle(),
     patientId
-      ? prisma.patient.findFirst({
-          where: { id: patientId, clinicId: clinic.id },
-          select: { patientId: true, name: true, phone: true, age: true, sex: true, address: true },
-        })
-      : Promise.resolve(null),
+      ? supabase
+          .from("patients")
+          .select("patientId, name, phone, age, sex, address")
+          .eq("id", patientId)
+          .eq("clinicId", clinic.id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
+  if (templateError) throw templateError;
+  if (patientError) throw patientError;
 
   if (!template) notFound();
 

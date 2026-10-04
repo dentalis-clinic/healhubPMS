@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/admin";
 import BlankLetterheadTemplate, { type PatientInfo } from "@/components/BlankLetterheadTemplate";
 import { getClinicForPage } from "@/lib/utils/get-clinic-for-page";
 
@@ -13,12 +13,14 @@ export default async function BlankTemplatePage({ searchParams }: PageProps) {
 
   const clinic = await getClinicForPage();
 
-  const foundPatient = patientId && clinic
-    ? await prisma.patient.findFirst({
-        where: { id: patientId, clinicId: clinic.id },
-        select: { patientId: true, name: true, phone: true, age: true, sex: true, address: true },
-      })
-    : null;
+  const { data: foundPatient } = patientId && clinic
+    ? await createAdminClient()
+        .from("patients")
+        .select("patientId, name, phone, age, sex, address")
+        .eq("id", patientId)
+        .eq("clinicId", clinic.id)
+        .maybeSingle()
+    : { data: null };
 
   if (foundPatient) {
     patient = {

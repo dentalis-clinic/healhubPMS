@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { dateOnlyIso, withUtcTimestamps, utcIso } from "@/lib/supabase/serialize";
 
 export async function GET(
   request: NextRequest,
@@ -15,15 +16,14 @@ export async function GET(
 
     // Support lookup by UUID or prescriptionId (RX-...)
     const isRxId = id.startsWith("RX-");
-    const prescription = await prisma.prescription.findUnique({
-      where: isRxId
-        ? { clinicId_prescriptionId: { clinicId: clinic.id, prescriptionId: id } }
-        : { id, clinicId: clinic.id },
-      include: {
-        appointment: { include: { patient: true } },
-        prescribedBy: { select: { id: true, name: true, email: true } },
-      },
-    });
+    let query = createAdminClient()
+      .from("prescriptions")
+      .select("*, appointment:appointments(*, patient:patients(*)), prescribedBy:admins(id, name, email)")
+      .eq("clinicId", clinic.id);
+    query = isRxId ? query.eq("prescriptionId", id) : query.eq("id", id);
+
+    const { data: prescription, error } = await query.maybeSingle();
+    if (error) throw error;
 
     if (!prescription) {
       return NextResponse.json(
@@ -33,21 +33,12 @@ export async function GET(
     }
 
     const serialized = {
-      ...prescription,
-      createdAt: prescription.createdAt.toISOString(),
-      updatedAt: prescription.updatedAt.toISOString(),
-      nextVisitDate: prescription.nextVisitDate?.toISOString() ?? null,
+      ...withUtcTimestamps(prescription),
+      nextVisitDate: dateOnlyIso(prescription.nextVisitDate),
       appointment: {
-        ...prescription.appointment,
-        createdAt: prescription.appointment.createdAt.toISOString(),
-        updatedAt: prescription.appointment.updatedAt.toISOString(),
-        preferredDateTime: prescription.appointment.preferredDateTime.toISOString(),
-        patient: {
-          ...prescription.appointment.patient,
-          createdAt: prescription.appointment.patient.createdAt.toISOString(),
-          updatedAt: prescription.appointment.patient.updatedAt.toISOString(),
-          age: prescription.appointment.patient.age,
-        },
+        ...withUtcTimestamps(prescription.appointment),
+        preferredDateTime: utcIso(prescription.appointment.preferredDateTime),
+        patient: withUtcTimestamps(prescription.appointment.patient),
       },
     };
 

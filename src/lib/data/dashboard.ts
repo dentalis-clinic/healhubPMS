@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { utcIso, withUtcTimestamps } from "@/lib/supabase/serialize";
+import { serializeAppointmentWithRelations } from "@/lib/supabase/serialize";
 
 /**
  * Server-side data fetchers for the dashboard.
@@ -76,18 +76,5 @@ export async function fetchAppointments(dateFilter: DateFilter = "today", clinic
   ).range(0, PAGE_SIZE - 1);
   if (error) throw error;
 
-  const serialized = appointments.map(({ payments, ...a }) => {
-    const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
-    const isWaived = payments.some((p) => p.method === "WAIVED");
-    return {
-      ...withUtcTimestamps(a),
-      isWaived,
-      preferredDateTime: utcIso(a.preferredDateTime),
-      totalAmount: a.totalAmount != null ? Number(a.totalAmount) : null,
-      totalPaid,
-      patient: withUtcTimestamps(a.patient),
-    };
-  });
-
-  return { appointments: serialized, total: count ?? 0 };
+  return { appointments: appointments.map(serializeAppointmentWithRelations), total: count ?? 0 };
 }

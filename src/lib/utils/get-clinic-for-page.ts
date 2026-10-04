@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
-import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface ClinicAddress {
   line1: string;
@@ -25,6 +25,7 @@ export interface ClinicInfo {
 export async function getClinicForPage(): Promise<ClinicInfo | null> {
   const h = await headers();
   let clinicId = h.get("x-clinic-id");
+  const supabaseTable = createAdminClient();
 
   // Local dev fallback: when the middleware can't resolve a clinic from the
   // subdomain (no DEFAULT_CLINIC_SLUG set), resolve from the logged-in admin's
@@ -35,10 +36,11 @@ export async function getClinicForPage(): Promise<ClinicInfo | null> {
       const supabase = await createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const admin = await prisma.admin.findUnique({
-          where: { id: user.id },
-          select: { clinicId: true },
-        });
+        const { data: admin } = await supabaseTable
+          .from("admins")
+          .select("clinicId")
+          .eq("id", user.id)
+          .maybeSingle();
         clinicId = admin?.clinicId ?? null;
       }
     } catch {
@@ -48,20 +50,11 @@ export async function getClinicForPage(): Promise<ClinicInfo | null> {
 
   if (!clinicId) return null;
 
-  const clinic = await prisma.clinic.findUnique({
-    where: { id: clinicId },
-    select: {
-      id: true,
-      name: true,
-      shortName: true,
-      timezone: true,
-      address: true,
-      phones: true,
-      email: true,
-      website: true,
-      logo: true,
-    },
-  });
+  const { data: clinic } = await supabaseTable
+    .from("clinics")
+    .select("id, name, shortName, timezone, address, phones, email, website, logo")
+    .eq("id", clinicId)
+    .maybeSingle();
 
   if (!clinic) return null;
 
@@ -71,7 +64,9 @@ export async function getClinicForPage(): Promise<ClinicInfo | null> {
     shortName: clinic.shortName,
     timezone: clinic.timezone,
     address: clinic.address as ClinicAddress | null,
-    phones: clinic.phones,
+    // Column is nullable in the DB despite schema.prisma's non-optional String[]
+    // (documented drift — see CLAUDE.md "Known schema drift").
+    phones: clinic.phones ?? [],
     email: clinic.email,
     website: clinic.website,
     logo: clinic.logo,

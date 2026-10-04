@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhoneNumber } from "@/lib/utils/phone";
 import { maskName } from "@/lib/utils/mask-name";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
 import { generatePatientToken } from "@/lib/utils/patient-token";
 import { getClinicContext } from "@/lib/utils/clinic-context";
+import { utcIso } from "@/lib/supabase/serialize";
 import type { PhoneCheckStatus, MaskedPatient } from "@/types/patient";
 
 const PHONE_CHECK_RATE_LIMIT = 10;
@@ -42,22 +43,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, status: "new" as PhoneCheckStatus, patients: [] });
     }
 
-    const patients = await prisma.patient.findMany({
-      where: { clinicId: clinic.clinicId, phone: normalizedPhone },
-      select: {
-        id: true,
-        name: true,
-        appointments: {
-          where: {
-            status: { in: ["PENDING", "OVERDUE"] },
-            preferredDateTime: { gt: new Date() },
-          },
-          orderBy: { preferredDateTime: "desc" },
-          take: 1,
-          select: { preferredDateTime: true },
-        },
-      },
-    });
+    // Dot-path filter + embedded order/limit: filters which appointment ROW is
+    // embedded (not which patients are returned — a patient with no matching
+    // appointment still comes back, with an empty `appointments` array).
+    const { data: patients, error: patientsError } = await createAdminClient()
+      .from("patients")
+      .select("id, name, appointments(preferredDateTime)")
+      .eq("clinicId", clinic.clinicId)
+      .eq("phone", normalizedPhone)
+      .in("appointments.status", ["PENDING", "OVERDUE"])
+      .gt("appointments.preferredDateTime", new Date().toISOString())
+      .order("preferredDateTime", { referencedTable: "appointments", ascending: false })
+      .limit(1, { referencedTable: "appointments" });
+    if (patientsError) throw patientsError;
 
     if (patients.length === 0) {
       await delay(200 + Math.random() * 200);
@@ -70,7 +68,7 @@ export async function GET(request: NextRequest) {
         id: generatePatientToken(p.id),
         maskedName: maskName(p.name),
         hasPending,
-        pendingDate: hasPending ? p.appointments[0].preferredDateTime.toISOString() : null,
+        pendingDate: hasPending ? utcIso(p.appointments[0].preferredDateTime) : null,
       };
     });
 

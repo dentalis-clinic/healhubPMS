@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DateTime } from "luxon";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
-import type {
-  AppointmentStatus,
-  VisitType,
-  BookingChannel,
-} from "@/generated/prisma/client";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { serializeAppointmentWithRelations, type AppointmentWithRelationsRow } from "@/lib/supabase/serialize";
+import type { Enums } from "@/generated/supabase/database.types";
 
 const PAGE_SIZE_DEFAULT = 30;
 const PAGE_SIZE_MAX = 100;
+
+const SORT_COLUMNS: Record<string, string> = {
+  createdAt: "createdAt",
+  preferredDateTime: "preferredDateTime",
+  status: "status",
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,7 +25,7 @@ export async function GET(request: NextRequest) {
     const statusFilter = searchParams.get("status") ?? "";
     const typeFilter = searchParams.get("type") ?? "";
     const dateFilter = searchParams.get("dateFilter") ?? "all";
-    const sortBy = searchParams.get("sortBy") ?? "createdAt";
+    const sortColumn = SORT_COLUMNS[searchParams.get("sortBy") ?? ""] ?? "createdAt";
     const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
     const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
     const pageSize = Math.min(
@@ -30,92 +33,65 @@ export async function GET(request: NextRequest) {
       Math.max(1, parseInt(searchParams.get("pageSize") ?? String(PAGE_SIZE_DEFAULT), 10))
     );
 
-    const allowedSortColumns: Record<string, Record<string, string>> = {
-      createdAt: { createdAt: sortOrder },
-      preferredDateTime: { preferredDateTime: sortOrder },
-      status: { status: sortOrder },
-    };
-    const orderBy = allowedSortColumns[sortBy] ?? { createdAt: sortOrder };
+    const supabase = createAdminClient();
 
-    const where: Record<string, unknown> = { clinicId: clinic.id };
-
-    if (dateFilter === "today" || dateFilter === "upcoming") {
-      const now = DateTime.now().setZone(clinic.timezone);
-      const todayStart = now.startOf("day").toJSDate();
-      const tomorrowStart = now.plus({ days: 1 }).startOf("day").toJSDate();
-
-      if (dateFilter === "today") {
-        where.preferredDateTime = { gte: todayStart, lt: tomorrowStart };
-      } else {
-        where.preferredDateTime = { gte: tomorrowStart };
-        where.status = { not: "CANCELLED" as AppointmentStatus };
+    // Free-text search: resolve to matching patient ids first (via the same
+    // literal-matching RPC api/patients uses — no ilike/wildcard-injection risk
+    // from building a raw PostgREST filter string out of user input), then
+    // filter appointments by patientId. A no-match search short-circuits to an
+    // empty result: `.in("patientId", [])` is not safe to send as-is.
+    let patientIdFilter: string[] | null = null;
+    if (q) {
+      const { data: matches, error: searchError } = await supabase.rpc("search_patients", {
+        p_clinic_id: clinic.id,
+        p_search: q,
+      });
+      if (searchError) throw searchError;
+      patientIdFilter = matches.map((m) => m.id);
+      if (patientIdFilter.length === 0) {
+        return NextResponse.json({ success: true, appointments: [], total: 0, page, pageSize });
       }
     }
 
-    if (statusFilter) {
-      where.status = statusFilter as AppointmentStatus;
+    let query = supabase
+      .from("appointments")
+      .select(
+        "*, patient:patients(*), prescription:prescriptions(id, prescriptionId), doctor:doctors(id, name, qualifications), payments(amount, method)",
+        { count: "exact" }
+      )
+      .eq("clinicId", clinic.id);
+
+    if (patientIdFilter) query = query.in("patientId", patientIdFilter);
+
+    if (dateFilter === "today" || dateFilter === "upcoming") {
+      const now = DateTime.now().setZone(clinic.timezone);
+      const todayStart = now.startOf("day").toJSDate().toISOString();
+      const tomorrowStart = now.plus({ days: 1 }).startOf("day").toJSDate().toISOString();
+
+      if (dateFilter === "today") {
+        query = query.gte("preferredDateTime", todayStart).lt("preferredDateTime", tomorrowStart);
+      } else {
+        query = query.gte("preferredDateTime", tomorrowStart).neq("status", "CANCELLED");
+      }
     }
 
-    if (typeFilter === "FOLLOW_UP") {
-      where.visitType = "FOLLOW_UP" as VisitType;
-    } else if (typeFilter === "ONLINE") {
-      where.bookingChannel = "ONLINE" as BookingChannel;
-    } else if (typeFilter === "WALK_IN") {
-      where.bookingChannel = "WALK_IN" as BookingChannel;
-    }
+    // Matches the original: an unrecognized status value is passed through
+    // as-is (PostgREST returns zero rows rather than erroring, same as Prisma did).
+    if (statusFilter) query = query.eq("status", statusFilter as Enums<"AppointmentStatus">);
 
-    if (q) {
-      where.OR = [
-        { patient: { name: { contains: q, mode: "insensitive" } } },
-        { patient: { phone: { contains: q } } },
-        { patient: { patientId: { contains: q, mode: "insensitive" } } },
-      ];
-    }
+    if (typeFilter === "FOLLOW_UP") query = query.eq("visitType", "FOLLOW_UP");
+    else if (typeFilter === "ONLINE") query = query.eq("bookingChannel", "ONLINE");
+    else if (typeFilter === "WALK_IN") query = query.eq("bookingChannel", "WALK_IN");
 
-    const include = {
-      patient: true,
-      prescription: { select: { id: true, prescriptionId: true } },
-      doctor: { select: { id: true, name: true, qualifications: true } },
-      payments: { select: { amount: true, method: true } },
-    } as const;
-
-    const [total, appointments] = await Promise.all([
-      prisma.appointment.count({ where }),
-      prisma.appointment.findMany({
-        where,
-        include,
-        orderBy,
-        take: pageSize,
-        skip: (page - 1) * pageSize,
-      }),
-    ]);
-
-    const serialized = appointments.map((a) => {
-      const totalPaid = a.payments.reduce((sum, p) => sum + Number(p.amount), 0);
-      const isWaived = a.payments.some((p) => p.method === "WAIVED");
-      return {
-        ...a,
-        isWaived,
-        createdAt: a.createdAt.toISOString(),
-        updatedAt: a.updatedAt.toISOString(),
-        preferredDateTime: a.preferredDateTime.toISOString(),
-        totalAmount: a.totalAmount != null ? Number(a.totalAmount) : null,
-        totalPaid,
-        payments: undefined,
-        patient: {
-          ...a.patient,
-          createdAt: a.patient.createdAt.toISOString(),
-          updatedAt: a.patient.updatedAt.toISOString(),
-        },
-        prescription: a.prescription ?? null,
-        doctor: a.doctor ?? null,
-      };
-    });
+    const { data: appointments, count, error } = await query
+      .order(sortColumn, { ascending: sortOrder === "asc" })
+      .range((page - 1) * pageSize, (page - 1) * pageSize + pageSize - 1);
+    if (error) throw error;
 
     return NextResponse.json({
       success: true,
-      appointments: serialized,
-      total,
+      appointments: (appointments as AppointmentWithRelationsRow[]).map(serializeAppointmentWithRelations),
+      total: count ?? 0,
       page,
       pageSize,
     });

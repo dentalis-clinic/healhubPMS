@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,11 @@ export default async function DashboardLayout({
     redirect("/admin/login");
   }
 
-  const admin = await prisma.admin.findUnique({ where: { id: user.id } });
+  const { data: admin } = await createAdminClient()
+    .from("admins")
+    .select("id")
+    .eq("id", user.id)
+    .maybeSingle();
   if (!admin) {
     redirect("/admin/login");
   }

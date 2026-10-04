@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { slugSchema } from "@/lib/validations/onboarding";
 
 export async function GET(request: NextRequest) {
@@ -14,10 +14,12 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const existing = await prisma.clinic.findUnique({
-    where: { slug },
-    select: { id: true },
-  });
+  const { data: existing, error } = await createAdminClient()
+    .from("clinics")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (error) throw error;
 
   if (existing) {
     return NextResponse.json({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { utcIso } from "@/lib/supabase/serialize";
 import { DateTime } from "luxon";
 
 /**
@@ -27,43 +28,42 @@ export async function GET(request: NextRequest) {
       ? DateTime.fromISO(toParam, { zone: clinic.timezone }).endOf("day")
       : now.endOf("day");
 
-    const fromUTC = fromIST.toUTC().toJSDate();
-    const toUTC = toIST.toUTC().toJSDate();
+    const fromUTC = fromIST.toUTC().toISO();
+    const toUTC = toIST.toUTC().toISO();
 
-    const [periodPayments, billedAppointments, allBillableAppointments] =
-      await Promise.all([
-        prisma.payment.findMany({
-          where: { clinicId: clinic.id, paidAt: { gte: fromUTC, lte: toUTC } },
-          select: { amount: true, method: true, paidAt: true, appointmentId: true },
-        }),
+    const supabase = createAdminClient();
+    const [
+      { data: periodPayments, error: periodPaymentsError },
+      { data: billedAppointments, error: billedError },
+      { data: allBillableAppointments, error: allBillableError },
+    ] = await Promise.all([
+      supabase
+        .from("payments")
+        .select("amount, method, paidAt, appointmentId")
+        .eq("clinicId", clinic.id)
+        .gte("paidAt", fromUTC)
+        .lte("paidAt", toUTC),
 
-        prisma.appointment.findMany({
-          where: {
-            clinicId: clinic.id,
-            status: { in: ["CONFIRMED", "COMPLETED"] },
-            totalAmount: { not: null },
-            preferredDateTime: { gte: fromUTC, lte: toUTC },
-          },
-          select: { totalAmount: true },
-        }),
+      supabase
+        .from("appointments")
+        .select("totalAmount")
+        .eq("clinicId", clinic.id)
+        .in("status", ["CONFIRMED", "COMPLETED"])
+        .not("totalAmount", "is", null)
+        .gte("preferredDateTime", fromUTC)
+        .lte("preferredDateTime", toUTC),
 
-        prisma.appointment.findMany({
-          where: {
-            clinicId: clinic.id,
-            status: { in: ["CONFIRMED", "COMPLETED"] },
-            totalAmount: { not: null },
-          },
-          select: {
-            id: true,
-            appointmentId: true,
-            totalAmount: true,
-            preferredDateTime: true,
-            patient: { select: { name: true, phone: true } },
-            payments: { select: { amount: true, method: true } },
-          },
-          orderBy: { preferredDateTime: "asc" },
-        }),
-      ]);
+      supabase
+        .from("appointments")
+        .select("id, appointmentId, totalAmount, preferredDateTime, patient:patients(name, phone), payments(amount, method)")
+        .eq("clinicId", clinic.id)
+        .in("status", ["CONFIRMED", "COMPLETED"])
+        .not("totalAmount", "is", null)
+        .order("preferredDateTime", { ascending: true }),
+    ]);
+    if (periodPaymentsError) throw periodPaymentsError;
+    if (billedError) throw billedError;
+    if (allBillableError) throw allBillableError;
 
     const totalCollected = periodPayments
       .filter((p) => p.method !== "WAIVED")
@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
           amountDue,
           totalPaid: Math.round(paid * 100) / 100,
           balance: Math.round(balance * 100) / 100,
-          preferredDateTime: a.preferredDateTime.toISOString(),
+          preferredDateTime: utcIso(a.preferredDateTime),
         };
       })
       .filter((b) => b.balance > 0)
@@ -111,7 +111,8 @@ export async function GET(request: NextRequest) {
 
     const dailyMap = new Map<string, { collected: number; waived: number }>();
     for (const p of periodPayments) {
-      const dateKey = DateTime.fromJSDate(p.paidAt)
+      // PostgREST returns timestamp columns without a zone; treat as UTC.
+      const dateKey = DateTime.fromISO(p.paidAt + "Z")
         .setZone(clinic.timezone)
         .toFormat("yyyy-MM-dd");
       const existing = dailyMap.get(dateKey) ?? { collected: 0, waived: 0 };

@@ -11,7 +11,7 @@ Living document. Update this whenever a phase starts, finishes, or changes shape
 | 2 — `wrangler.jsonc` / `open-next.config.ts` scaffolding | ✅ Done | Also surfaced the `pg-cloudflare` build bug |
 | 3 — Data layer for Workers (2 prototype routes) | ✅ Done | **Architecture changed** — see below. Also fixed an unrelated pre-existing build blocker |
 | Rollout Batch 1 — typegen + `require-admin.ts` + 3 shared transactional helpers | ✅ Done (2026-09-27) | 7 files Prisma-free; 2 migrations applied; also fixed 2 latent ID-collision bugs, a 1:1-embed bug, RPC grants, and middleware header spoofing. Details: "What actually shipped" in `Planning/ROLLOUT_BATCH_1_PLAN.md` |
-| Rollout Batch 2 — remaining Prisma-importing files | 🟡 In progress | ✅ 2a `appointments/confirm` (2026-09-28): new `confirm_appointment` RPC (migration `20260928100000`), old `slot-conflict`/`patient-id`/`prescription-id` helpers deleted. ✅ 2b `patients` (2026-09-28). ✅ 2c CRUD by domain — payments, doctors, printable-templates, admin, clinic (2026-09-29, no new migrations). Next: 2d admin pages, reports, onboarding, phone-check, type-only imports. See Batch 2 log below |
+| Rollout Batch 2 — remaining Prisma-importing files | ✅ Done (2d closed 2026-10-04) | ✅ 2a `appointments/confirm` (2026-09-28): new `confirm_appointment` RPC (migration `20260928100000`), old `slot-conflict`/`patient-id`/`prescription-id` helpers deleted. ✅ 2b `patients` (2026-09-28). ✅ 2c CRUD by domain — payments, doctors, printable-templates, admin, clinic (2026-09-29). ✅ 2d pages, reports, onboarding, phone-check, lookup, list, shared utils (2026-10-04). **No app code imports Prisma any more.** Next: cleanup phase (see below). See Batch 2 log |
 | DNS / Cloudflare account signup | ⬜ Deliberately deferred | User's choice: do this once code is ready to deploy |
 | Secrets (`wrangler secret put`) | ⬜ Not started | Needs the account from the step above |
 | Deploy & smoke test | ⬜ Not started | |
@@ -104,6 +104,19 @@ Only once **all 41 files** are converted (a future phase, not yet started) do Hy
 - `payments`→`admins` (recordedBy) and `appointments`→`doctors`/`patients` embeds confirmed as single objects (FK-owner side), not arrays — consistent with the pattern from Batch 1.
 - Found a gap in `eslint.config.mjs`: `.open-next/**` wasn't in the ignore list (only `.next/**` was), so running `opennextjs-cloudflare build` before `npm run lint` in the same session made lint scan ~17k lines of bundled worker output (1830 fabricated "errors"). Fixed — unrelated to this batch's code but discovered while verifying it.
 - Verified: authenticated HTTP E2E, 48/48 genuine checks (2 initial test-script false positives ruled out: `printable-templates` POST never returned 201 even in the original code, and one `reset-password` check hit Supabase Auth's own per-email cooldown, not a code path — confirmed via the dev server log's literal "For security purposes, you can only request this after N seconds"). `tsc`, eslint (post-fix), `opennextjs-cloudflare build` ✅. 18 Prisma-importing files remain (7 route files + `prescriptions/[id]` already-mixed + 7 page/layout files + 2 util files + 1 type-only).
+
+### 2d — pages, reports, onboarding, phone-check, lookup, list, utils (done 2026-10-04)
+- **0 app files import `@/lib/prisma`** now; `src/lib/prisma.ts` deleted. Type-only Prisma imports in `types/patient.ts` and `lib/constants/appointment.ts` moved to `Enums<>` from the Supabase types.
+- Converted: 7 page/layout files (dashboard layouts, patients page, 4 prescription/template pages), `appointments/list`, `appointments/bulk-cancel`, `appointments/availability`, `phone-check`, `patients/lookup`, `prescriptions/[id]` GET, `reports/payments`, `onboarding/check-slug`, `onboarding/register`, `lib/utils/get-clinic-for-page.ts`.
+- **Deleted** `lib/utils/resolve-appointment-status.ts`: zero callers, and the pg_cron script's own comment says it replaced it.
+- **Shared helper**: `serializeAppointmentWithRelations` in `lib/supabase/serialize.ts` now serves both the dashboard fetcher and `appointments/list` (was duplicated logic).
+- **Search**: `appointments/list` `q` reuses the `search_patients` RPC (literal matching, no PostgREST filter-string built from user input), then filters appointments by `patientId`. Side effect: email is now also matched (the original only matched name/phone/patientId) — a superset, flagged.
+- **Schema drift found**: `clinics.phones` is nullable in the DB (Prisma's schema says non-optional). Guarded with `?? []`.
+- **Gotcha**: `PostgrestBuilder` is `PromiseLike`, not `Promise` — no `.catch()`. Use `try { await … } catch {}` for best-effort cleanup.
+- **Kept, flagged**: `api/prescriptions/[id]` GET has **no callers** in the app (the prescription page queries directly). Converted rather than deleted — it's an API surface, not an internal helper.
+- **Remaining, out of app runtime**: `scripts/seed-admin.ts` and `scripts/normalize-patient-names.ts` still use Prisma directly. Local maintenance scripts; convert or remove in cleanup.
+- Verified: authenticated E2E **46/46** against a production build (`next build && next start`, `DEFAULT_CLINIC_SLUG` set). Pages checked via rendered HTML. Test data and auth sessions cleaned up. `tsc`, eslint (0 errors), `opennextjs-cloudflare build` ✅.
+- Test-run lessons: the public `phone-check` rate limit (10/hour/IP, in-memory) is consumed by repeated test runs — restart the server to reset. `next dev` ignores `DEFAULT_CLINIC_SLUG` (already noted in Batch 1), so public routes need the production build.
 
 ## Corrections to earlier notes in this file
 

@@ -7,11 +7,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { DateTime } from "luxon";
-import { prisma } from "@/lib/prisma";
-import { AppointmentStatus } from "@/generated/prisma/client";
 import { generateSlotsForDate } from "@/lib/utils/time-slots";
 import { buildClinicSchedule } from "@/lib/utils/clinic-schedule";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getClinicContext } from "@/lib/utils/clinic-context";
 
 export interface TimeSlotAvailability {
@@ -33,20 +32,31 @@ export async function GET(request: NextRequest) {
     const { clinic, error } = getClinicContext(request);
     if (error) return error;
 
-    const [clinicRow, supabase] = await Promise.all([
-      prisma.clinic.findUnique({
-        where: { id: clinic.clinicId },
-        select: { timezone: true, businessHours: true, slotDuration: true },
-      }),
+    const supabaseTable = createAdminClient();
+    const [{ data: clinicRow, error: clinicRowError }, supabase] = await Promise.all([
+      supabaseTable
+        .from("clinics")
+        .select("timezone, businessHours, slotDuration")
+        .eq("id", clinic.clinicId)
+        .maybeSingle(),
       createClient(),
     ]);
+    if (clinicRowError) throw clinicRowError;
 
     const scheduleConfig = buildClinicSchedule(clinicRow ?? { timezone: clinic.timezone, businessHours: null, slotDuration: null });
 
     const { data: { user } } = await supabase.auth.getUser();
-    const isAdmin = user
-      ? !!(await prisma.admin.findUnique({ where: { id: user.id, clinicId: clinic.clinicId } }))
-      : false;
+    let isAdmin = false;
+    if (user) {
+      const { data: admin, error: adminError } = await supabaseTable
+        .from("admins")
+        .select("id")
+        .eq("id", user.id)
+        .eq("clinicId", clinic.clinicId)
+        .maybeSingle();
+      if (adminError) throw adminError;
+      isAdmin = !!admin;
+    }
 
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get("date");
@@ -69,32 +79,28 @@ export async function GET(request: NextRequest) {
     }
 
     const slots = generateSlotsForDate(date, scheduleConfig);
-    const startOfDay = date.startOf("day").toJSDate();
-    const endOfDay = date.endOf("day").toJSDate();
+    const startOfDay = date.startOf("day").toJSDate().toISOString();
+    const endOfDay = date.endOf("day").toJSDate().toISOString();
 
-    const whereClause: {
-      clinicId: string;
-      preferredDateTime: { gte: Date; lte: Date };
-      status: { in: AppointmentStatus[] };
-      id?: { not: string };
-    } = {
-      clinicId: clinic.clinicId,
-      preferredDateTime: { gte: startOfDay, lte: endOfDay },
-      status: { in: ["PENDING", "OVERDUE", "CONFIRMED", "COMPLETED"] },
-    };
+    let appointmentsQuery = supabaseTable
+      .from("appointments")
+      .select("id, preferredDateTime")
+      .eq("clinicId", clinic.clinicId)
+      .gte("preferredDateTime", startOfDay)
+      .lte("preferredDateTime", endOfDay)
+      .in("status", ["PENDING", "OVERDUE", "CONFIRMED", "COMPLETED"]);
 
     if (excludeAppointmentId) {
-      whereClause.id = { not: excludeAppointmentId };
+      appointmentsQuery = appointmentsQuery.neq("id", excludeAppointmentId);
     }
 
-    const appointments = await prisma.appointment.findMany({
-      where: whereClause,
-      select: { id: true, preferredDateTime: true },
-    });
+    const { data: appointments, error: appointmentsError } = await appointmentsQuery;
+    if (appointmentsError) throw appointmentsError;
 
     const slotCountMap = new Map<string, number>();
     for (const appointment of appointments) {
-      const appointmentTime = DateTime.fromJSDate(appointment.preferredDateTime, {
+      // PostgREST returns timestamp columns without a zone; treat as UTC (see lib/supabase/serialize.ts).
+      const appointmentTime = DateTime.fromISO(appointment.preferredDateTime + "Z", {
         zone: scheduleConfig.timezone,
       }).toFormat("HH:mm");
       slotCountMap.set(appointmentTime, (slotCountMap.get(appointmentTime) || 0) + 1);

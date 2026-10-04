@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { DashboardProvider } from "@/components/admin/DashboardContext";
 import Sidebar from "@/components/admin/Sidebar";
@@ -20,7 +20,11 @@ export default async function MainLayout({
     redirect("/admin/login");
   }
 
-  const admin = await prisma.admin.findUnique({ where: { id: user.id } });
+  const { data: admin } = await createAdminClient()
+    .from("admins")
+    .select("id, name, email")
+    .eq("id", user.id)
+    .maybeSingle();
   if (!admin) {
     redirect("/admin/login");
   }

@@ -1,12 +1,12 @@
-import type {
-  SubmissionSource,
-  AppointmentType,
-  AppointmentStatus,
-  BookingChannel,
-  VisitType,
-  AppointmentPriority,
-  Sex,
-} from "@/generated/prisma/client";
+import type { Enums } from "@/generated/supabase/database.types";
+
+type SubmissionSource = Enums<"SubmissionSource">;
+type AppointmentType = Enums<"AppointmentType">;
+type AppointmentStatus = Enums<"AppointmentStatus">;
+type BookingChannel = Enums<"BookingChannel">;
+type VisitType = Enums<"VisitType">;
+type AppointmentPriority = Enums<"AppointmentPriority">;
+type Sex = Enums<"Sex">;
 
 // --- Patient (person) ---
 

@@ -1,41 +1,27 @@
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getClinicForPage } from "@/lib/utils/get-clinic-for-page";
+import { utcIso } from "@/lib/supabase/serialize";
 import PatientsView from "@/components/admin/PatientsView";
 
 const PAGE_SIZE = 30;
 
 async function fetchPatients(clinicId: string) {
-  const where = { clinicId };
-
-  const [patients, total] = await Promise.all([
-    prisma.patient.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: PAGE_SIZE,
-      select: {
-        id: true,
-        patientId: true,
-        name: true,
-        phone: true,
-        email: true,
-        age: true,
-        sex: true,
-        address: true,
-        createdAt: true,
-        appointments: {
-          where: { status: { not: "CANCELLED" } },
-          select: {
-            preferredDateTime: true,
-            totalAmount: true,
-            payments: { select: { amount: true } },
-          },
-          orderBy: { preferredDateTime: "desc" },
-        },
-      },
-    }),
-    prisma.patient.count({ where }),
-  ]);
+  // Dot-path filter on a plain (non-`!inner`) embed filters which appointment
+  // ROWS are returned, not which patients — a patient with only cancelled
+  // appointments still comes back, with an empty `appointments` array.
+  const { data: patients, count, error } = await createAdminClient()
+    .from("patients")
+    .select(
+      "id, patientId, name, phone, email, age, sex, address, createdAt, appointments(preferredDateTime, totalAmount, payments(amount))",
+      { count: "exact" }
+    )
+    .eq("clinicId", clinicId)
+    .neq("appointments.status", "CANCELLED")
+    .order("createdAt", { ascending: false })
+    .order("preferredDateTime", { referencedTable: "appointments", ascending: false })
+    .range(0, PAGE_SIZE - 1);
+  if (error) throw error;
 
   return {
     patients: patients.map((p) => {
@@ -44,7 +30,7 @@ async function fetchPatients(clinicId: string) {
 
       for (const apt of p.appointments) {
         if (lastVisit === null) {
-          lastVisit = apt.preferredDateTime.toISOString();
+          lastVisit = utcIso(apt.preferredDateTime);
         }
         if (apt.totalAmount != null) {
           const paid = apt.payments.reduce((sum, pay) => sum + Number(pay.amount), 0);
@@ -62,13 +48,13 @@ async function fetchPatients(clinicId: string) {
         age: p.age,
         sex: p.sex,
         address: p.address,
-        createdAt: p.createdAt.toISOString(),
+        createdAt: utcIso(p.createdAt),
         totalVisits: p.appointments.length,
         lastVisit,
         outstanding: Math.round(outstanding * 100) / 100,
       };
     }),
-    total,
+    total: count ?? 0,
   };
 }
 

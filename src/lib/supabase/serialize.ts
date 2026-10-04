@@ -1,3 +1,5 @@
+import type { Tables } from "@/generated/supabase/database.types";
+
 /**
  * PostgREST → API response normalization.
  *
@@ -26,4 +28,31 @@ export function dateOnlyIso(d: string | null): string | null {
 /** Normalizes the `createdAt` / `updatedAt` pair every table has. */
 export function withUtcTimestamps<T extends { createdAt: string; updatedAt: string }>(row: T): T {
   return { ...row, createdAt: utcIso(row.createdAt), updatedAt: utcIso(row.updatedAt) };
+}
+
+/**
+ * Shape of an `appointments` row selected with:
+ * `"*, patient:patients(*), prescription:prescriptions(id, prescriptionId), doctor:doctors(id, name, qualifications), payments(amount, method)"`
+ * — shared by `lib/data/dashboard.ts` and `api/appointments/list`.
+ */
+export interface AppointmentWithRelationsRow extends Tables<"appointments"> {
+  patient: Tables<"patients">;
+  prescription: Pick<Tables<"prescriptions">, "id" | "prescriptionId"> | null;
+  doctor: Pick<Tables<"doctors">, "id" | "name" | "qualifications"> | null;
+  payments: Pick<Tables<"payments">, "amount" | "method">[];
+}
+
+/** Computes totalPaid/isWaived from `payments` and normalizes timestamps/Decimal fields. */
+export function serializeAppointmentWithRelations(row: AppointmentWithRelationsRow) {
+  const { payments, ...a } = row;
+  const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+  const isWaived = payments.some((p) => p.method === "WAIVED");
+  return {
+    ...withUtcTimestamps(a),
+    isWaived,
+    preferredDateTime: utcIso(a.preferredDateTime),
+    totalAmount: a.totalAmount != null ? Number(a.totalAmount) : null,
+    totalPaid,
+    patient: withUtcTimestamps(a.patient),
+  };
 }

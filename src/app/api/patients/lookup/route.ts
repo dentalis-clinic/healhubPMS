@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { normalizePhoneNumber } from "@/lib/utils/phone";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { utcIso } from "@/lib/supabase/serialize";
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,22 +27,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, patients: [] });
     }
 
-    const patients = await prisma.patient.findMany({
-      where: { clinicId: clinic.id, phone: normalizedPhone },
-      select: {
-        id: true,
-        patientId: true,
-        name: true,
-        sex: true,
-        email: true,
-        age: true,
-        appointments: {
-          orderBy: { preferredDateTime: "desc" },
-          take: 1,
-          select: { preferredDateTime: true },
-        },
-      },
-    });
+    const { data: patients, error } = await createAdminClient()
+      .from("patients")
+      .select("id, patientId, name, sex, email, age, appointments(preferredDateTime)")
+      .eq("clinicId", clinic.id)
+      .eq("phone", normalizedPhone)
+      .order("preferredDateTime", { referencedTable: "appointments", ascending: false })
+      .limit(1, { referencedTable: "appointments" });
+    if (error) throw error;
 
     const result = patients.map((p) => ({
       id: p.id,
@@ -50,10 +43,7 @@ export async function GET(request: NextRequest) {
       sex: p.sex,
       email: p.email,
       age: p.age,
-      lastVisitDate:
-        p.appointments.length > 0
-          ? p.appointments[0].preferredDateTime.toISOString()
-          : null,
+      lastVisitDate: p.appointments.length > 0 ? utcIso(p.appointments[0].preferredDateTime) : null,
     }));
 
     return NextResponse.json({ success: true, patients: result });

@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { createAdminClient } from "@/lib/supabase/admin";
 import BlankPrescriptionTemplate from "@/components/BlankPrescriptionTemplate";
 import { getClinicForPage } from "@/lib/utils/get-clinic-for-page";
+import { utcIso } from "@/lib/supabase/serialize";
 
 interface PageProps {
   params: Promise<{ appointmentId: string }>;
@@ -13,10 +14,13 @@ export default async function BlankPrescriptionPage({ params }: PageProps) {
   const clinic = await getClinicForPage();
   if (!clinic) notFound();
 
-  const appointment = await prisma.appointment.findFirst({
-    where: { id: appointmentId, clinicId: clinic.id },
-    include: { patient: true, doctor: true },
-  });
+  const { data: appointment, error } = await createAdminClient()
+    .from("appointments")
+    .select("id, preferredDateTime, reasonForVisit, patient:patients(*), doctor:doctors(name, qualifications, registrationNumber)")
+    .eq("id", appointmentId)
+    .eq("clinicId", clinic.id)
+    .maybeSingle();
+  if (error) throw error;
 
   if (!appointment) {
     notFound();
@@ -25,7 +29,7 @@ export default async function BlankPrescriptionPage({ params }: PageProps) {
   // Serialize dates
   const serialized = {
     id: appointment.id,
-    preferredDateTime: appointment.preferredDateTime.toISOString(),
+    preferredDateTime: utcIso(appointment.preferredDateTime),
     reasonForVisit: appointment.reasonForVisit,
     patient: {
       patientId: appointment.patient.patientId,

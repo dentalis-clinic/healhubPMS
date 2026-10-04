@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
-import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { bulkCancelSchema } from "@/lib/validations/appointment";
 import { validateOrigin } from "@/lib/utils/csrf";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -27,18 +27,18 @@ export async function PATCH(request: NextRequest) {
 
     const { ids } = parsed.data;
 
-    const result = await prisma.appointment.updateMany({
-      where: {
-        clinicId: clinic.id,
-        id: { in: ids },
-        status: { in: ["PENDING", "OVERDUE"] },
-      },
-      data: { status: "CANCELLED" },
-    });
+    const { data: cancelled, error } = await createAdminClient()
+      .from("appointments")
+      .update({ status: "CANCELLED", updatedAt: new Date().toISOString() })
+      .eq("clinicId", clinic.id)
+      .in("id", ids)
+      .in("status", ["PENDING", "OVERDUE"])
+      .select("id");
+    if (error) throw error;
 
-    const skipped = ids.length - result.count;
+    const skipped = ids.length - cancelled.length;
 
-    return NextResponse.json({ success: true, cancelled: result.count, skipped });
+    return NextResponse.json({ success: true, cancelled: cancelled.length, skipped });
   } catch (error) {
     console.error("PATCH /api/appointments/bulk-cancel error:", error);
     return NextResponse.json(
