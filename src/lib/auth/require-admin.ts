@@ -39,7 +39,7 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
   // maybeSingle: zero rows → data null (403 below); real DB errors still throw → caller's 500.
   const { data: row, error } = await createAdminClient()
     .from("admins")
-    .select("id, clinicId, email, name, createdAt, updatedAt, clinic:clinics(id, shortName, timezone)")
+    .select("id, clinicId, email, name, createdAt, updatedAt, clinic:clinics(id, shortName, timezone, isActive)")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -57,6 +57,21 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
     };
   }
 
-  const { clinic, ...admin } = row;
+  const { clinic: { isActive, ...clinic }, ...admin } = row;
+
+  // A deactivated clinic (platform admin switched it off) loses API access too,
+  // not just its pages — the middleware only hides the subdomain.
+  if (!isActive) {
+    return {
+      admin: null,
+      clinic: null,
+      user: null,
+      error: NextResponse.json(
+        { success: false, error: "This clinic has been deactivated." },
+        { status: 403 }
+      ),
+    };
+  }
+
   return { admin, clinic, user, error: null };
 }

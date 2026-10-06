@@ -266,3 +266,14 @@ model Admin {
   @@index([clinicId])
   @@map("admins")
 }
+
+// Super admin: manages clinics and clinic admin accounts across tenants.
+// No clinicId on purpose. Created only via scripts/seed-platform-admin.ts.
+model PlatformAdmin {
+  id        String   @id // From Supabase auth.users (shared UUID)
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  @@map("platform_admins")
+}

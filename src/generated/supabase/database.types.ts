@@ -366,6 +366,27 @@ export type Database = {
           },
         ];
       };
+      platform_admins: {
+        Row: {
+          createdAt: string;
+          email: string;
+          id: string;
+          name: string;
+        };
+        Insert: {
+          createdAt?: string;
+          email: string;
+          id: string;
+          name: string;
+        };
+        Update: {
+          createdAt?: string;
+          email?: string;
+          id?: string;
+          name?: string;
+        };
+        Relationships: [];
+      };
       prescriptions: {
         Row: {
           advice: string | null;
@@ -592,6 +613,23 @@ export type Database = {
           pending_confirmations: number;
           today_appointments: number;
           total_patients: number;
+        }[];
+      };
+      get_platform_clinic_overview: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          adminCount: number;
+          appointmentCount: number;
+          createdAt: string;
+          email: string;
+          id: string;
+          isActive: boolean;
+          lastAppointmentAt: string;
+          name: string;
+          patientCount: number;
+          phones: string[];
+          shortName: string;
+          slug: string;
         }[];
       };
       search_patients: {

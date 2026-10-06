@@ -55,6 +55,13 @@ Tooling only (never in the Worker):
 1. Create the clinic first (via `/register`, or a `clinics` row)
 2. `SEED_ADMIN_PASSWORD=… SEED_CLINIC_SLUG=<slug> npx tsx scripts/seed-admin.ts`
 
+### Super admin (platform admin)
+- Panel at `/platform` (login `/platform/login`). Manages clinics (activate/deactivate) and clinic admin accounts (add, remove, set temporary password). Never shows patient data.
+- Accounts live in `platform_admins` and are created **only** by the script — there is no UI path:
+  `PLATFORM_ADMIN_EMAIL=… PLATFORM_ADMIN_PASSWORD='…' PLATFORM_ADMIN_NAME='…' npx tsx scripts/seed-platform-admin.ts`
+- Use an email that is not a clinic admin. Password ≥ 12 characters. 2FA (Supabase TOTP) is planned before public launch.
+- Actions are logged as `[platform] …` lines in the Worker logs (no audit table yet).
+
 ### Production Deploy (Workers Builds, GitHub-connected — client's Cloudflare account)
 Every push to `main` on `dentalis-clinic/healhubPMS` builds and deploys automatically.
 

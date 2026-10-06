@@ -108,6 +108,8 @@ The prerequisite for everything SaaS. Nothing else starts until this is complete
 - Client-side: use `createBrowserClient` from `@supabase/ssr`
 - Middleware: refresh session cookies on every request to `/admin/*`
 - Seed admin via `scripts/seed-admin.ts` (uses Supabase Admin API with service role key)
+- Super admin ("platform admin"): separate `platform_admins` table, `/platform` panel, `/api/platform/*` guarded by `requirePlatformAdmin()`. These routes are the only code allowed to act across clinics — they never read `x-clinic-id`, and they never return patient data. Accounts come only from `scripts/seed-platform-admin.ts`.
+- `requireAdmin()` returns 403 for admins of a deactivated clinic (`clinics.isActive = false`)
 
 ## Environment Variables
 - Server vars: no prefix required

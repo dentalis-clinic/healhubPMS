@@ -21,8 +21,8 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // Registration paths don't belong to any clinic — skip subdomain resolution.
-  const CLINIC_FREE = ["/register", "/api/onboarding"];
+  // Registration and the super admin panel don't belong to any clinic — skip subdomain resolution.
+  const CLINIC_FREE = ["/register", "/api/onboarding", "/platform", "/api/platform"];
   const skipClinicResolution = CLINIC_FREE.some((p) => pathname.startsWith(p));
 
   // --- Clinic resolution ---
@@ -111,6 +111,14 @@ export async function middleware(request: NextRequest) {
       loginUrl.pathname = "/admin/login";
       return NextResponse.redirect(loginUrl);
     }
+  }
+
+  // Protect /platform/* (except /platform/login). Signed in isn't enough — the
+  // page and every /api/platform route also check the platform_admins table.
+  if (pathname.startsWith("/platform") && pathname !== "/platform/login" && !user) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/platform/login";
+    return NextResponse.redirect(loginUrl);
   }
 
   // Redirect authenticated users away from /admin/login → dashboard
