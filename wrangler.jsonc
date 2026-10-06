@@ -13,13 +13,15 @@
   },
 
   // Non-secret runtime vars. Secrets (SUPABASE_SERVICE_ROLE_KEY,
-  // UPSTASH_REDIS_URL, UPSTASH_REDIS_TOKEN) are NOT set here —
-  // they're set later via `wrangler secret put <NAME>`.
+  // NEXT_PUBLIC_SUPABASE_ANON_KEY, UPSTASH_REDIS_URL, UPSTASH_REDIS_TOKEN)
+  // are NOT set here — set them in the dashboard (Worker → Settings →
+  // Variables and Secrets) or via `wrangler secret put <NAME>`.
   //
-  // DEFAULT_CLINIC_SLUG is intentionally NOT set here — it must stay unset
-  // in production so the root domain falls through to /register instead of
-  // resolving to a specific clinic subdomain. See middleware.ts.
+  // DEFAULT_CLINIC_SLUG only applies on *.workers.dev and localhost (no
+  // clinic subdomain there) — it picks which clinic the test URL serves.
+  // It never affects <slug>.healthhub.app. See middleware.ts.
   "vars": {
+    "DEFAULT_CLINIC_SLUG": "shakeb-clinic",
     "NEXT_PUBLIC_APP_DOMAIN": "healthhub.app",
     "NEXT_PUBLIC_SUPABASE_URL": "https://apuxomkxwtjcoaqjhlux.supabase.co",
     "TZ": "Asia/Kolkata",

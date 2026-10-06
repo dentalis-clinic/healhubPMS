@@ -8,9 +8,10 @@ import { NextResponse, type NextRequest } from "next/server";
  * 3. Refresh the Supabase session (prevents stale JWTs)
  * 4. Protect /admin/* routes (except /admin/login)
  *
- * Does NOT use Prisma — Edge runtime requires fetch-based DB access (Supabase REST).
- * Local dev: set DEFAULT_CLINIC_SLUG=<slug> in .env.local to simulate a clinic subdomain.
- * Without it, localhost behaves like the root SaaS domain and redirects to /register.
+ * Uses fetch-based DB access (Supabase REST) only.
+ * Local dev and *.workers.dev test deploys can't carry a clinic subdomain, so on those
+ * hosts DEFAULT_CLINIC_SLUG=<slug> picks the clinic. Without it, they behave like the
+ * root SaaS domain and redirect to /register. It has no effect on <slug>.<appDomain>.
  */
 export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
@@ -24,28 +25,27 @@ export async function middleware(request: NextRequest) {
   const skipClinicResolution = CLINIC_FREE.some((p) => pathname.startsWith(p));
 
   // --- Clinic resolution ---
-  const host = request.headers.get("host") ?? "";
-  const isLocalhost = host.startsWith("localhost") || host.startsWith("127.0.0.1");
+  const host = (request.headers.get("host") ?? "").split(":")[0]; // strip port if present
+  const isTestHost =
+    host === "localhost" || host === "127.0.0.1" || host.endsWith(".workers.dev");
 
   // Production: only treat host as a clinic subdomain when it matches <slug>.<appDomain>.
   // The root app domain itself must never resolve to a clinic — those requests go to /register.
   const appDomain = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "healthhub.app";
 
-  const clinicSlug = isLocalhost
+  const clinicSlug = isTestHost
     ? (process.env.DEFAULT_CLINIC_SLUG ?? "")
     : (() => {
-        const bare = host.split(":")[0]; // strip port if present
-        if (bare === appDomain || bare === `www.${appDomain}`) return "";
-        if (bare.endsWith(`.${appDomain}`)) {
-          return bare.slice(0, bare.length - appDomain.length - 1);
+        if (host === appDomain || host === `www.${appDomain}`) return "";
+        if (host.endsWith(`.${appDomain}`)) {
+          return host.slice(0, host.length - appDomain.length - 1);
         }
-        // Unrecognised host (Vercel preview URLs, etc.) — treat as root domain.
+        // Unrecognised host — treat as root domain.
         return "";
       })();
 
   if (!skipClinicResolution && clinicSlug) try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const res = await fetch(
