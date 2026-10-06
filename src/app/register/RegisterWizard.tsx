@@ -4,10 +4,10 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Input, FormField, Alert } from "@/components/ui";
+import { APP_DOMAIN, isTestHost } from "@/lib/constants/app";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "healthhub.app";
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
   "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
@@ -569,13 +569,11 @@ function StepProgress({ currentStep }: { currentStep: number }) {
 // ── Success screen ───────────────────────────────────────────────────────────
 
 function SuccessScreen({ slug }: { slug: string }) {
-  const isLocalhost =
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-
-  const loginUrl = isLocalhost
-    ? `http://localhost:3000/admin/login`
-    : `https://${slug}.${APP_DOMAIN}/admin/login`;
+  // Test hosts serve DEFAULT_CLINIC_SLUG on the same origin — no clinic subdomain.
+  const loginUrl =
+    typeof window !== "undefined" && isTestHost(window.location.hostname)
+      ? `${window.location.origin}/admin/login`
+      : `https://${slug}.${APP_DOMAIN}/admin/login`;
 
   return (
     <div className="text-center space-y-6">

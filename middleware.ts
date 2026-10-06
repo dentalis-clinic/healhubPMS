@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isTestHost } from "@/lib/constants/app";
 
 /**
  * Middleware runs on every matched request to:
@@ -26,14 +27,11 @@ export async function middleware(request: NextRequest) {
 
   // --- Clinic resolution ---
   const host = (request.headers.get("host") ?? "").split(":")[0]; // strip port if present
-  const isTestHost =
-    host === "localhost" || host === "127.0.0.1" || host.endsWith(".workers.dev");
-
   // Production: only treat host as a clinic subdomain when it matches <slug>.<appDomain>.
   // The root app domain itself must never resolve to a clinic — those requests go to /register.
   const appDomain = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "healthhub.app";
 
-  const clinicSlug = isTestHost
+  const clinicSlug = isTestHost(host)
     ? (process.env.DEFAULT_CLINIC_SLUG ?? "")
     : (() => {
         if (host === appDomain || host === `www.${appDomain}`) return "";

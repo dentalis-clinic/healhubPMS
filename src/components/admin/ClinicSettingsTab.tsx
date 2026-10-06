@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Alert, Button, FormField, Input } from "@/components/ui";
 import type { ApiJson } from "@/types/api";
+import { APP_DOMAIN } from "@/lib/constants/app";
 
 interface BusinessHoursSession {
   start: string;
@@ -500,7 +501,7 @@ export default function ClinicSettingsTab() {
 
           <div>
             <p className="text-xs text-text-hint">
-              Subdomain: <span className="font-mono">{settings?.slug}.healthhub.app</span> (cannot be changed)
+              Subdomain: <span className="font-mono">{settings?.slug}.{APP_DOMAIN}</span> (cannot be changed)
             </p>
           </div>
         </div>
