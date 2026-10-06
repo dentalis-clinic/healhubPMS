@@ -25,9 +25,19 @@ const clientSchema = z.object({
 });
 
 const merged = serverSchema.merge(clientSchema);
+export type Env = z.infer<typeof merged>;
 
-function validateEnv() {
-  const parsed = merged.safeParse(process.env);
+/**
+ * `next build` imports every route module to collect page data, but server
+ * secrets only exist at runtime (Worker secrets) — Cloudflare's build has no
+ * .env. So at build time only the NEXT_PUBLIC_ vars (inlined into the bundle
+ * then) are required; the full schema is enforced when the Worker runs.
+ */
+const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+
+function validateEnv(): Env {
+  const schema = isBuildPhase ? serverSchema.partial().merge(clientSchema) : merged;
+  const parsed = schema.safeParse(process.env);
 
   if (!parsed.success) {
     console.error("❌ Invalid environment variables:");
@@ -35,8 +45,7 @@ function validateEnv() {
     throw new Error("Invalid environment variables");
   }
 
-  return parsed.data;
+  return parsed.data as Env;
 }
 
 export const env = validateEnv();
-export type Env = z.infer<typeof merged>;

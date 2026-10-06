@@ -2,7 +2,7 @@
 
 ## Infrastructure
 
-- **Platform:** Cloudflare Workers via OpenNext (`@opennextjs/cloudflare`), Worker name `dentalis-pms`. **Not yet deployed** — the account, DNS and secrets are still to do (see `Planning/CLOUDFLARE_MIGRATION_PROGRESS.md`).
+- **Platform:** Cloudflare Workers via OpenNext (`@opennextjs/cloudflare`), Worker name `dentalis-pms`, deployed by Workers Builds from `main` on the client's Cloudflare account. Testing on `dentalis-pms.<account>.workers.dev` until a domain is bought.
 - **Database + Auth + Storage:** Supabase, project `apuxomkxwtjcoaqjhlux` (ap-northeast-2 — SaaS project, NOT the clinic)
 - **Build system:** `next build` for the app; `opennextjs-cloudflare build` produces the Worker bundle (`.open-next/`). Bundle is ~2.3 MB gzip (Workers free plan limit: 3 MB).
 - **Rate limiting:** Upstash Redis (in-memory fallback when unset — per-instance only, so not enforced across Worker instances)
@@ -11,17 +11,20 @@
 
 ## Environment Variables
 
-Worker runtime (set via `wrangler secret put` for secrets, `wrangler.jsonc` `vars` for non-secrets):
+Two separate places, because Next.js inlines `NEXT_PUBLIC_*` into the bundle at **build** time while everything else is read at **run** time. Workers Builds has no `.env`, and `src/env.ts` only requires the `NEXT_PUBLIC_*` vars during `next build`.
 
-| Variable | Purpose | Set where |
-|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (inlined at build time) | `.env.local` (build) + `wrangler.jsonc` vars |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable anon key (inlined at build time) | `.env.local` (build) |
-| `NEXT_PUBLIC_APP_DOMAIN` | Root app domain (`healthhub.app`) | `wrangler.jsonc` vars |
-| `SUPABASE_SERVICE_ROLE_KEY` | Secret service role key (server-only) | `wrangler secret put` |
-| `UPSTASH_REDIS_URL` / `UPSTASH_REDIS_TOKEN` | Rate limiting (optional, recommended in prod) | `wrangler secret put` |
-| `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS` | Public booking rate limit (defaults 3 / 1h) | `wrangler.jsonc` vars |
-| `TZ` | `Asia/Kolkata` | `wrangler.jsonc` vars |
+| Variable | Purpose | Build (Workers Builds → Settings → Build → Variables) | Runtime |
+|---|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | ✅ required | `wrangler.jsonc` vars |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable anon key | ✅ required | Worker secret |
+| `NEXT_PUBLIC_APP_DOMAIN` | Root app domain (`healthhub.app`) | optional (client falls back to `healthhub.app`) | `wrangler.jsonc` vars |
+| `SUPABASE_SERVICE_ROLE_KEY` | Secret service role key (server-only) | ❌ never | Worker secret |
+| `UPSTASH_REDIS_URL` / `UPSTASH_REDIS_TOKEN` | Rate limiting (optional, recommended in prod) | ❌ | Worker secret |
+| `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS` | Public booking rate limit (defaults 3 / 1h) | — | `wrangler.jsonc` vars |
+| `TZ` | `Asia/Kolkata` | — | `wrangler.jsonc` vars |
+| `DEFAULT_CLINIC_SLUG` | Which clinic `*.workers.dev` / localhost serves | — | `wrangler.jsonc` vars |
+
+Worker secrets: dashboard (Worker → Settings → Variables and Secrets, type **Secret**) or `npx wrangler secret put <NAME>`. Plain-text vars set in the dashboard are **overwritten** by `wrangler.jsonc` on every deploy — change those in the file.
 
 Tooling only (never in the Worker):
 
@@ -30,7 +33,9 @@ Tooling only (never in the Worker):
 | `DIRECT_URL` | Session pooler (port 5432) — Prisma CLI migrations and `npm run db:types` | `.env` |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_NAME` / `SEED_CLINIC_SLUG` | Seed script inputs | shell, when running `scripts/seed-admin.ts` |
 
-> `DEFAULT_CLINIC_SLUG` must **stay unset in production** (it makes the root domain resolve to a clinic). Local dev only.
+> `DEFAULT_CLINIC_SLUG` only applies on `localhost` and `*.workers.dev` (hosts that can't carry a clinic subdomain). It never affects `<slug>.healthhub.app` or the root domain.
+>
+> Don't run `npm run deploy` from a laptop with secrets in `.env`/`.env.local`: OpenNext bundles local `.env*` files into the Worker (`.open-next/cloudflare/next-env.mjs`). Deploy through Workers Builds instead.
 
 ## Deploy Process
 
@@ -50,14 +55,25 @@ Tooling only (never in the Worker):
 1. Create the clinic first (via `/register`, or a `clinics` row)
 2. `SEED_ADMIN_PASSWORD=… SEED_CLINIC_SLUG=<slug> npx tsx scripts/seed-admin.ts`
 
-### Production Deploy (once the Cloudflare account exists)
-1. `npm run build` and `npx opennextjs-cloudflare build` — both must pass
-2. Confirm `wrangler deploy --dry-run` reports the bundle under the 3 MB gzip free-plan limit (or upgrade the plan)
-3. Set secrets: `npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY` (plus Upstash keys)
-4. DNS: `healthhub.app` on Cloudflare; route `*.healthhub.app/*` to the Worker, with the root domain going to `/register`
-5. `npm run deploy` (`opennextjs-cloudflare build && opennextjs-cloudflare deploy`)
-6. Confirm pending migrations are applied: `npx prisma migrate status`
-7. Smoke test: `/register`, a clinic subdomain's booking form, admin login, and a payment on an appointment
+### Production Deploy (Workers Builds, GitHub-connected — client's Cloudflare account)
+Every push to `main` on `dentalis-clinic/healhubPMS` builds and deploys automatically.
+
+One-time setup (Workers & Pages → Create → Import a repository):
+- Repository: `dentalis-clinic/healhubPMS`, production branch `main`, root directory `/`
+- Worker name: `dentalis-pms` (must match `name` in `wrangler.jsonc`)
+- Build command: `npx opennextjs-cloudflare build`
+- Deploy command: `npx opennextjs-cloudflare deploy`
+- Build variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Runtime secrets: `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `UPSTASH_REDIS_URL`, `UPSTASH_REDIS_TOKEN`
+
+Before merging to `main`:
+1. `npx tsc --noEmit`, `npm run lint`, `npx opennextjs-cloudflare build` all pass
+2. Bundle under the plan limit (`npx wrangler deploy --dry-run`; free plan: 3 MB gzip)
+3. Migrations applied on the prod DB: `npx prisma migrate status`
+
+Custom domain (not done yet): `healthhub.app` on Cloudflare DNS, proxied wildcard `*` record, Worker route `*.healthhub.app/*` plus the root domain.
+
+Smoke test after deploy: `/register`, the booking form, admin login, an appointment with a payment. Watch errors with `npx wrangler tail dentalis-pms` or the Worker's Logs tab. Error 1102 = CPU limit → upgrade to Workers Paid.
 
 ### Pre-release Checklist
 - `npx tsc --noEmit` and `npm run lint` pass
