@@ -35,9 +35,21 @@ export type Env = z.infer<typeof merged>;
  */
 const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
 
+/**
+ * NEXT_PUBLIC_ vars must be referenced by their full literal name: Next.js
+ * inlines those references at build time. Reading them off the process.env
+ * object (as safeParse would) only sees runtime values, and on the Worker the
+ * build variables aren't there — every route importing this module would 500.
+ */
+const runtimeEnv = {
+  ...process.env,
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+};
+
 function validateEnv(): Env {
   const schema = isBuildPhase ? serverSchema.partial().merge(clientSchema) : merged;
-  const parsed = schema.safeParse(process.env);
+  const parsed = schema.safeParse(runtimeEnv);
 
   if (!parsed.success) {
     console.error("❌ Invalid environment variables:");

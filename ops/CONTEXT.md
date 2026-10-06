@@ -16,7 +16,7 @@ Two separate places, because Next.js inlines `NEXT_PUBLIC_*` into the bundle at 
 | Variable | Purpose | Build (Workers Builds → Settings → Build → Variables) | Runtime |
 |---|---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | ✅ required | `wrangler.jsonc` vars |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable anon key | ✅ required | Worker secret |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable anon key | ✅ required | not needed — inlined at build (`src/env.ts` reads it by literal name) |
 | `NEXT_PUBLIC_APP_DOMAIN` | Root app domain (`healthhub.app`) | optional (client falls back to `healthhub.app`) | `wrangler.jsonc` vars |
 | `SUPABASE_SERVICE_ROLE_KEY` | Secret service role key (server-only) | ❌ never | Worker secret |
 | `UPSTASH_REDIS_URL` / `UPSTASH_REDIS_TOKEN` | Rate limiting (optional, recommended in prod) | ❌ | Worker secret |
