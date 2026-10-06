@@ -122,7 +122,6 @@ export default function BlankLetterheadTemplate({ patient, clinic }: { patient?:
           <div className="mb-4 flex items-start justify-between">
             <div className="flex flex-col items-start">
               {clinic?.logo && (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={clinic.logo}
                   alt="Clinic logo"

@@ -15,7 +15,13 @@ const eslintConfig = defineConfig([
     // Cloudflare (OpenNext) build output — generated, gitignored.
     ".open-next/**",
     ".wrangler/**",
+    "cloudflare-env.d.ts",
   ]),
+  {
+    // next/image optimisation is disabled on Workers (images.unoptimized in
+    // next.config.ts), so <Image> would add nothing over a plain <img>.
+    rules: { "@next/next/no-img-element": "off" },
+  },
 ]);
 
 export default eslintConfig;

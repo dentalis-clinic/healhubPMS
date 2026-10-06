@@ -148,7 +148,6 @@ export default function BlankPrescriptionTemplate({
           <div className="flex items-start justify-between mb-4">
             <div className="flex flex-col items-start">
               {clinic?.logo && (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={clinic.logo}
                   alt="Clinic logo"

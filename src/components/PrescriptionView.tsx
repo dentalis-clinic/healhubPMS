@@ -71,7 +71,6 @@ export default function PrescriptionView({ prescription, clinic }: PrescriptionV
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-3">
               {clinic?.logo && (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={clinic.logo}
                   alt="Clinic logo"

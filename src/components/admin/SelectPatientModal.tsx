@@ -36,13 +36,11 @@ export default function SelectPatientModal({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
   // Load initial list on mount
   useEffect(() => {
     fetchPatients("");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchPatients(q: string) {

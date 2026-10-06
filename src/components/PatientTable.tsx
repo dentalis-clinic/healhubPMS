@@ -208,7 +208,8 @@ function KebabMenu({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    confirmingAction === "cancel" ? handleCancel() : handleDelete();
+                    if (confirmingAction === "cancel") handleCancel();
+                    else handleDelete();
                   }}
                   disabled={acting}
                   className="flex-1 rounded bg-interactive-error px-2 py-1 text-xs text-text-inverse hover:bg-interactive-error-hover disabled:opacity-50"

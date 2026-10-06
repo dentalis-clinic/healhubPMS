@@ -110,7 +110,6 @@ export default function SurveyTemplateView({ template, patient, clinic }: Survey
         <div className="relative z-10 mb-4 border-b-2 border-accent-600 pb-2">
           <div className="mb-4 flex items-start justify-between">
             {clinic?.logo && (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={clinic.logo} alt="Clinic logo" className="h-20 w-40 rounded object-contain" />
             )}
             {addr && (

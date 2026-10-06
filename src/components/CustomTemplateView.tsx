@@ -27,7 +27,6 @@ function ClinicHeader({ clinic }: { clinic: ClinicInfo | null }) {
       <div className="mb-4 flex items-start justify-between">
         <div>
           {clinic?.logo && (
-            // eslint-disable-next-line @next/next/no-img-element
             <img src={clinic.logo} alt="Clinic logo" className="h-20 w-40 rounded object-contain" />
           )}
         </div>

@@ -12,6 +12,14 @@ import type { PatientMatch, DoctorRow } from "@/types/patient";
 import type { ApiJson } from "@/types/api";
 import { ConfirmationModal } from "./ConfirmationModal";
 
+function toTitleCase(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
 export default function AppointmentSlideOver() {
   const {
     appointmentSlideOver: { open, appointment },
@@ -163,6 +171,13 @@ export default function AppointmentSlideOver() {
     };
   }, [open]);
 
+  const autoFillFromPatient = useCallback((patient: PatientMatch) => {
+    setName(toTitleCase(patient.name));
+    setSex((patient.sex as "MALE" | "FEMALE" | "OTHER") ?? "");
+    setAge(patient.age != null ? String(patient.age) : "");
+    setEmail(patient.email ?? "");
+  }, []);
+
   // Phone auto-detect (new appointment mode only)
   const lookupPatients = useCallback(
     (phoneValue: string) => {
@@ -207,23 +222,8 @@ export default function AppointmentSlideOver() {
         })
         .finally(() => setLookingUp(false));
     },
-    [isConfirmMode]
+    [isConfirmMode, autoFillFromPatient]
   );
-
-  function toTitleCase(value: string) {
-    return value
-      .trim()
-      .split(/\s+/)
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(" ");
-  }
-
-  function autoFillFromPatient(patient: PatientMatch) {
-    setName(toTitleCase(patient.name));
-    setSex((patient.sex as "MALE" | "FEMALE" | "OTHER") ?? "");
-    setAge(patient.age != null ? String(patient.age) : "");
-    setEmail(patient.email ?? "");
-  }
 
   function handlePhoneChange(value: string) {
     setPhone(value);
