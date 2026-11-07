@@ -12,9 +12,10 @@ Living document. Update this whenever a phase starts, finishes, or changes shape
 | 3 — Data layer for Workers (2 prototype routes) | ✅ Done | **Architecture changed** — see below. Also fixed an unrelated pre-existing build blocker |
 | Rollout Batch 1 — typegen + `require-admin.ts` + 3 shared transactional helpers | ✅ Done (2026-09-27) | 7 files Prisma-free; 2 migrations applied; also fixed 2 latent ID-collision bugs, a 1:1-embed bug, RPC grants, and middleware header spoofing. Details: "What actually shipped" in `Planning/ROLLOUT_BATCH_1_PLAN.md` |
 | Rollout Batch 2 — remaining Prisma-importing files | ✅ Done (2d closed 2026-10-04) | ✅ 2a `appointments/confirm` (2026-09-28): new `confirm_appointment` RPC (migration `20260928100000`), old `slot-conflict`/`patient-id`/`prescription-id` helpers deleted. ✅ 2b `patients` (2026-09-28). ✅ 2c CRUD by domain — payments, doctors, printable-templates, admin, clinic (2026-09-29). ✅ 2d pages, reports, onboarding, phone-check, lookup, list, shared utils (2026-10-04). **No app code imports Prisma any more.** Next: cleanup phase (see below). See Batch 2 log |
-| DNS / Cloudflare account signup | ⬜ Deliberately deferred | User's choice: do this once code is ready to deploy |
-| Secrets (`wrangler secret put`) | ⬜ Not started | Needs the account from the step above |
-| Deploy & smoke test | ⬜ Not started | |
+| Cloudflare account + Workers Builds | ✅ Done (2026-10-06) | Live at https://dentalis-pms.it-dentalis.workers.dev, deploys on push to `main` |
+| Secrets | ✅ Done (2026-10-06) | Set in the dashboard. Upstash skipped: no database exists yet |
+| Deploy & smoke test on `workers.dev` | ✅ Done (2026-10-06) | |
+| Domain | 🟡 In progress | `dentalispms.com` bought 2026-11-07. See `ops/CONTEXT.md` → Custom domain |
 | Cleanup (dead config, docs) | ✅ Done (2026-10-04) | Prisma runtime + `pg`/`pg-cloudflare` removed; Hyperdrive, tracing workaround, `vercel.json`, `config/clinic.ts`, `CRON_SECRET`/`DATABASE_URL` removed; docs rewritten for Cloudflare. Bundle 4.24 → 2.33 MB gzip. See cleanup log below |
 
 ---

@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Routing
+| Task | Go to | Read | Skills |
+|------|-------|------|--------|
+| Start of every session: check messages from the PM | / | PM.md | — |
+
 ## Project Overview
 
 **HealthHub PMS** is a multi-tenant dental clinic management SaaS. It evolved from a single-clinic deployment (DentalisPMS for DDCJ — Dentalis Dental Care by Jamians) and is now being rebuilt as a cloud SaaS that multiple clinics can subscribe to and use independently.
@@ -36,7 +41,7 @@ The prerequisite for everything SaaS. Nothing else starts until this is complete
 - Add `Clinic` model: `slug`, `name`, `shortName` (patient ID prefix), `timezone`, `address`, `phones`, `email`, `logo`, `isActive`
 - Add `clinicId` FK to every table: `patients`, `appointments`, `doctors`, `payments`, `prescriptions`, `printable_templates`, `admins`
 - Migrate DDCJ config from `src/lib/config/clinic.ts` (static file) into a `Clinic` DB row
-- Subdomain routing: `ddcj.healthhub.app`, `newclinic.healthhub.app` → Cloudflare wildcard route `*.healthhub.app`
+- Subdomain routing: `ddcj.dentalispms.com`, `newclinic.dentalispms.com` → Cloudflare wildcard route `*.dentalispms.com`
 - Middleware reads subdomain → looks up `Clinic` by slug → injects `clinicId` into all request contexts
 - Replace all hardcoded `Asia/Kolkata` (25+ files) with `clinic.timezone` from DB
 - Replace hardcoded `DDCJ` prefix with `clinic.shortName` from DB
