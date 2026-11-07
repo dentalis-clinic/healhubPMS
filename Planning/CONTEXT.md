@@ -109,8 +109,9 @@ Admin:
 
 Clinic Owner (Onboarding):
   Visits dentalispms.com (landing page) → "Register your clinic"
-  → dentalispms.com/register setup wizard: name → slug → address → logo → admin credentials
+  → dentalispms.com/register, two steps: clinic (name → subdomain + patient ID prefix, both suggested from the name) → admin account
   → Clinic + Admin created in one transaction
+  → Dashboard home shows a setup checklist (phone, opening hours, logo, address, first doctor), each item ticked from the clinic's data; the booking page is live from the start
   → Success screen leads with the patient booking link ({slug}.dentalispms.com): copy, share on WhatsApp, download QR
   → Then: go to {slug}.dentalispms.com/admin/login
 ```
@@ -146,6 +147,10 @@ _Planned, not built: landing page at root (today `/` redirects to `/register`); 
 ### 2026-10-06 — Patient-invisible platform; root domain is a landing page; domain bought at launch
 **Decision:** (1) HealthHub is a tool for clinics, invisible to patients — no marketplace or cross-clinic search. (2) Clinics are addressed by subdomain (`{slug}.dentalispms.com`) once a domain is added; no path-based (`/c/{slug}`) fallback. (3) The domain is bought at launch, after the flows are fixed — until then, testing runs on `*.workers.dev` with `DEFAULT_CLINIC_SLUG` selecting the one clinic served.
 **Rationale:** Selling software to clinics doesn't depend on attracting patients ourselves; a marketplace would compete with Practo. Subdomains look professional and Cloudflare's wildcard DNS/cert is free. Accepted trade-off: before launch, only one clinic's public booking page is reachable at a time (admin dashboards work for every clinic on any host).
+
+### 2026-11-07 — Minimal signup, setup checklist on the dashboard
+**Decision:** Signup asks only for what's hard to change later (subdomain, patient ID prefix) plus the admin account. Everything else is added from Settings, prompted by a dashboard checklist whose items are worked out from the clinic's data, with no stored ticks. The booking page is live right away. A phone number is optional for now and becomes required after internal testing.
+**Rationale:** A shorter signup means more clinics finish it, and Settings could already edit every field. Moving the logo out of signup also removed the browser upload to Storage, which was failing on RLS and would have needed an anonymous upload policy.
 
 ### 2026-09-27 — Uniqueness on FK columns declared as constraints
 **Decision:** 1:1 FK columns get a unique *constraint* (not just Prisma's unique index).

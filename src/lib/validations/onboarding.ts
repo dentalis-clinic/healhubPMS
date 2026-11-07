@@ -47,11 +47,12 @@ export const registerClinicSchema = z.object({
       .array(
         z.string().regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number")
       )
-      .min(1, "At least one phone number is required")
-      .max(3),
+      // Optional during internal testing: signup asks only for what can't be
+      // changed later, and the dashboard checklist asks for the rest.
+      .max(3)
+      .default([]),
     email: z.email("Enter a valid email").optional().or(z.literal("")),
     website: z.url("Enter a valid URL (include https://)").optional().or(z.literal("")),
-    logo: z.string().optional(),
   }),
   admin: z.object({
     name: z.string().min(2, "Name is required").max(100),

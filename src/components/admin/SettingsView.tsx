@@ -30,7 +30,7 @@ interface AdminRow {
   createdAt: string;
 }
 
-type ActiveTab = "clinic" | "doctors" | "admins" | "printables";
+export type ActiveTab = "clinic" | "doctors" | "admins" | "printables";
 
 // --- Add Doctor Modal ---
 function AddDoctorModal({
@@ -436,9 +436,9 @@ function EditDoctorModal({
 }
 
 // --- Main Settings View ---
-export default function SettingsView() {
+export default function SettingsView({ initialTab = "clinic" }: { initialTab?: ActiveTab }) {
   const { adminId: currentAdminId } = useDashboard();
-  const [activeTab, setActiveTab] = useState<ActiveTab>("clinic");
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
 
   // Modal open state
   const [showAddDoctor, setShowAddDoctor] = useState(false);

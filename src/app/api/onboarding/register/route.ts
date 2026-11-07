@@ -49,7 +49,9 @@ export async function POST(request: NextRequest) {
         phones: clinicData.phones,
         email: clinicData.email || null,
         website: clinicData.website || null,
-        logo: clinicData.logo || null,
+        // Logos are uploaded from Settings, through the server. Signup never
+        // takes one, so it can't be pointed at an arbitrary URL.
+        logo: null,
         isActive: true,
         updatedAt: new Date().toISOString(),
       })
