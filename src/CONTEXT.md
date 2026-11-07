@@ -65,6 +65,7 @@ src/
 
 ## Patterns to Follow
 
+- **Admin auth (one check, two outcomes):** `getAdminAccess()` in `src/lib/auth/require-admin.ts` is the only admin check — `requireAdmin()` (API routes) and both dashboard layouts use it. Signed out → `/admin/login`; signed in but not allowed (no `admins` row, or clinic inactive) → `/admin/no-access`, **never** `/admin/login` (middleware sends signed-in users from the login page to the dashboard, so that loops — this shipped once).
 - **Data access (Cloudflare migration, in progress):** New/converted code uses `createAdminClient()` (supabase-js, typed with the generated `Database`) — not Prisma. Prisma stays the schema + migration tool. Multi-statement/transactional logic goes in a Postgres RPC function (migration file), not app code. See `Planning/CLOUDFLARE_MIGRATION_PROGRESS.md`.
 - **Tenant scoping:** Every query (Prisma, supabase-js `.eq("clinicId", …)`, or inside an RPC `WHERE "clinicId" = p_clinic_id`) that touches patient/appointment/payment/prescription/doctor/template data MUST include `WHERE clinicId = {clinicId}`. Read `clinicId` from the request header injected by middleware — never trust client-supplied clinicId.
 - **Env vars:** Always import from `@/env` (Zod-validated). Never access `process.env` directly.

@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getAdminAccess } from "@/lib/auth/require-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -9,23 +8,12 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const access = await getAdminAccess();
 
-  if (!user) {
-    redirect("/admin/login");
-  }
-
-  const { data: admin } = await createAdminClient()
-    .from("admins")
-    .select("id")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (!admin) {
-    redirect("/admin/login");
-  }
+  if (access.status === "signed_out") redirect("/admin/login");
+  // Signed in but not allowed: never back to /admin/login (middleware bounces
+  // signed-in users to the dashboard, which would loop).
+  if (access.status !== "ok") redirect("/admin/no-access");
 
   return <>{children}</>;
 }

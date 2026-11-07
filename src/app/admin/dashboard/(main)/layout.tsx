@@ -1,6 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
+import { getAdminAccess } from "@/lib/auth/require-admin";
 import { DashboardProvider } from "@/components/admin/DashboardContext";
 import Sidebar from "@/components/admin/Sidebar";
 import DashboardHeader from "@/components/admin/DashboardHeader";
@@ -11,23 +10,11 @@ export default async function MainLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/admin/login");
-  }
-
-  const { data: admin } = await createAdminClient()
-    .from("admins")
-    .select("id, name, email")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (!admin) {
-    redirect("/admin/login");
-  }
+  // Layouts can render in parallel with their parent, so this one checks too.
+  const access = await getAdminAccess();
+  if (access.status === "signed_out") redirect("/admin/login");
+  if (access.status !== "ok") redirect("/admin/no-access");
+  const { admin } = access;
 
   return (
     <DashboardProvider adminId={admin.id}>
