@@ -5,6 +5,17 @@
   "compatibility_date": "2026-09-20",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
+  // Root domain: a Custom Domain, which manages its own DNS record (so no `@`
+  // row is needed in the zone). Clinic subdomains: a route, because Custom
+  // Domains can't be wildcards; it needs the proxied `*` record (AAAA 100::).
+  // workers_dev is explicit because wrangler turns the test URL off by default
+  // once routes exist.
+  "routes": [
+    { "pattern": "dentalispms.com", "custom_domain": true },
+    { "pattern": "*.dentalispms.com/*", "zone_name": "dentalispms.com" }
+  ],
+  "workers_dev": true,
+
   // Static assets emitted by `opennextjs-cloudflare build` (client JS/CSS,
   // public/ files, etc.), served by Cloudflare's Asset Worker.
   "assets": {
@@ -19,10 +30,10 @@
   //
   // DEFAULT_CLINIC_SLUG only applies on *.workers.dev and localhost (no
   // clinic subdomain there) — it picks which clinic the test URL serves.
-  // It never affects <slug>.healthhub.app. See middleware.ts.
+  // It never affects <slug>.dentalispms.com. See middleware.ts.
   "vars": {
     "DEFAULT_CLINIC_SLUG": "my-clinic",
-    "NEXT_PUBLIC_APP_DOMAIN": "healthhub.app",
+    "NEXT_PUBLIC_APP_DOMAIN": "dentalispms.com",
     "NEXT_PUBLIC_SUPABASE_URL": "https://apuxomkxwtjcoaqjhlux.supabase.co",
     "TZ": "Asia/Kolkata",
     "RATE_LIMIT_MAX": "3",

@@ -1,10 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isTestHost } from "@/lib/constants/app";
+import { APP_DOMAIN, isTestHost } from "@/lib/constants/app";
 
 /**
  * Middleware runs on every matched request to:
- * 1. Resolve the clinic from the subdomain (e.g., ddcj.healthhub.app → clinicId)
+ * 1. Resolve the clinic from the subdomain (e.g., ddcj.dentalispms.com → clinicId)
  * 2. Inject clinic context headers (x-clinic-id, x-clinic-timezone, x-clinic-short-name)
  * 3. Refresh the Supabase session (prevents stale JWTs)
  * 4. Protect /admin/* routes (except /admin/login)
@@ -29,7 +29,7 @@ export async function middleware(request: NextRequest) {
   const host = (request.headers.get("host") ?? "").split(":")[0]; // strip port if present
   // Production: only treat host as a clinic subdomain when it matches <slug>.<appDomain>.
   // The root app domain itself must never resolve to a clinic — those requests go to /register.
-  const appDomain = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "healthhub.app";
+  const appDomain = APP_DOMAIN;
 
   const clinicSlug = isTestHost(host)
     ? (process.env.DEFAULT_CLINIC_SLUG ?? "")

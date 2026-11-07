@@ -1,9 +1,10 @@
 /**
- * Root SaaS domain; clinics live at <slug>.<APP_DOMAIN>. Placeholder until a
- * domain is bought. Inlined into client code at build time, so changing it
- * means setting the build variable as well as the wrangler.jsonc var.
+ * Root SaaS domain; clinics live at <slug>.<APP_DOMAIN>. NEXT_PUBLIC_ values are
+ * inlined at build time, and Workers Builds doesn't set this one, so the fallback
+ * is what the browser sees. Changing the domain means changing it here and in
+ * wrangler.jsonc (var and routes).
  */
-export const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "healthhub.app";
+export const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "dentalispms.com";
 
 /**
  * Hosts that can't carry a clinic subdomain (local dev, *.workers.dev test

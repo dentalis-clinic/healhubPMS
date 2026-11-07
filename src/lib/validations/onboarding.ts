@@ -1,5 +1,16 @@
 import { z } from "zod/v4";
 
+/**
+ * Subdomains a clinic can't claim: the middleware treats www as the root domain,
+ * so a clinic there would never load. The rest are kept for our own use and
+ * would look official if a clinic held them.
+ */
+const RESERVED_SLUGS = new Set([
+  "www", "api", "app", "admin", "platform", "register", "login", "auth",
+  "mail", "email", "smtp", "ftp", "status", "support", "help", "docs",
+  "blog", "cdn", "assets", "static", "staging",
+]);
+
 export const slugSchema = z
   .string()
   .min(3, "Minimum 3 characters")
@@ -8,7 +19,8 @@ export const slugSchema = z
     /^[a-z][a-z0-9-]*[a-z0-9]$/,
     "Lowercase letters, numbers, and hyphens only — must start and end with a letter or number"
   )
-  .refine((s) => !s.includes("--"), "Cannot contain consecutive hyphens");
+  .refine((s) => !s.includes("--"), "Cannot contain consecutive hyphens")
+  .refine((s) => !RESERVED_SLUGS.has(s), "This subdomain isn't available");
 
 export const shortNameSchema = z
   .string()

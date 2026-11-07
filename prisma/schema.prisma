@@ -63,7 +63,7 @@ enum PaymentMethod {
 /// Clinic entity — one row per tenant.
 model Clinic {
   id        String   @id @default(uuid())
-  slug      String   @unique // subdomain: ddcj.healthhub.app → "ddcj"
+  slug      String   @unique // subdomain: ddcj.dentalispms.com → "ddcj"
   name      String
   shortName String   // patient ID prefix, e.g. "DDCJ"
   timezone  String   @default("Asia/Kolkata")

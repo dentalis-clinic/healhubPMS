@@ -2,7 +2,7 @@
 
 ## Infrastructure
 
-- **Platform:** Cloudflare Workers via OpenNext (`@opennextjs/cloudflare`), Worker name `dentalis-pms`, deployed by Workers Builds from `main` on the client's Cloudflare account. Testing on `dentalis-pms.<account>.workers.dev` until a domain is bought.
+- **Platform:** Cloudflare Workers via OpenNext (`@opennextjs/cloudflare`), Worker name `dentalis-pms`, deployed by Workers Builds from `main` on the client's Cloudflare account. Domain: `dentalispms.com`, bought through Cloudflare Registrar (2026-11-07). Live test URL since 2026-10-06: https://dentalis-pms.it-dentalis.workers.dev (GitHub connected, secrets set, platform admin account created; Upstash not set up, so rate limiting is the per-instance fallback).
 - **Database + Auth + Storage:** Supabase, project `apuxomkxwtjcoaqjhlux` (ap-northeast-2 — SaaS project, NOT the clinic)
 - **Build system:** `next build` for the app; `opennextjs-cloudflare build` produces the Worker bundle (`.open-next/`). Bundle is ~2.3 MB gzip (Workers free plan limit: 3 MB).
 - **Rate limiting:** Upstash Redis (in-memory fallback when unset — per-instance only, so not enforced across Worker instances)
@@ -17,7 +17,7 @@ Two separate places, because Next.js inlines `NEXT_PUBLIC_*` into the bundle at 
 |---|---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | ✅ required | `wrangler.jsonc` vars |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable anon key | ✅ required | not needed — inlined at build (`src/env.ts` reads it by literal name) |
-| `NEXT_PUBLIC_APP_DOMAIN` | Root app domain (`healthhub.app`) | optional (client falls back to `healthhub.app`) | `wrangler.jsonc` vars |
+| `NEXT_PUBLIC_APP_DOMAIN` | Root app domain (`dentalispms.com`) | not needed (`src/lib/constants/app.ts` falls back to `dentalispms.com`; to change the domain, change it there) | `wrangler.jsonc` vars |
 | `SUPABASE_SERVICE_ROLE_KEY` | Secret service role key (server-only) | ❌ never | Worker secret |
 | `UPSTASH_REDIS_URL` / `UPSTASH_REDIS_TOKEN` | Rate limiting (optional, recommended in prod) | ❌ | Worker secret |
 | `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS` | Public booking rate limit (defaults 3 / 1h) | — | `wrangler.jsonc` vars |
@@ -33,7 +33,7 @@ Tooling only (never in the Worker):
 | `DIRECT_URL` | Session pooler (port 5432) — Prisma CLI migrations and `npm run db:types` | `.env` |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_NAME` / `SEED_CLINIC_SLUG` | Seed script inputs | shell, when running `scripts/seed-admin.ts` |
 
-> `DEFAULT_CLINIC_SLUG` only applies on `localhost` and `*.workers.dev` (hosts that can't carry a clinic subdomain). It never affects `<slug>.healthhub.app` or the root domain.
+> `DEFAULT_CLINIC_SLUG` only applies on `localhost` and `*.workers.dev` (hosts that can't carry a clinic subdomain). It never affects `<slug>.dentalispms.com` or the root domain.
 >
 > Don't run `npm run deploy` from a laptop with secrets in `.env`/`.env.local`: OpenNext bundles local `.env*` files into the Worker (`.open-next/cloudflare/next-env.mjs`). Deploy through Workers Builds instead.
 
@@ -78,7 +78,7 @@ Before merging to `main`:
 2. Bundle under the plan limit (`npx wrangler deploy --dry-run`; free plan: 3 MB gzip)
 3. Migrations applied on the prod DB: `npx prisma migrate status`
 
-Custom domain (not done yet): `healthhub.app` on Cloudflare DNS, proxied wildcard `*` record, Worker route `*.healthhub.app/*` plus the root domain.
+Custom domain: `dentalispms.com`. Both entries are in `wrangler.jsonc`, so they deploy with the Worker. The root is a Workers Custom Domain, which manages its own DNS, so the zone has no `@` row. Clinic subdomains use the route `*.dentalispms.com/*` plus one proxied DNS record, `*` → `AAAA 100::` (a placeholder, since the Worker answers). Supabase Auth also needs Site URL `https://dentalispms.com` and redirect URL `https://*.dentalispms.com/**`.
 
 Smoke test after deploy: `/register`, the booking form, admin login, an appointment with a payment. Watch errors with `npx wrangler tail dentalis-pms` or the Worker's Logs tab. Error 1102 = CPU limit → upgrade to Workers Paid.
 
